@@ -1,13 +1,10 @@
 """Tests for the Signal emitter system."""
 
-import asyncio
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from server.signals.emitter import SignalEmitter
-from server.signals.types import Signal, SignalType
+from server.signals.types import SignalType
 
 
 @pytest.fixture

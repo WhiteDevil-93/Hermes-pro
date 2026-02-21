@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 
 from server.config.settings import VertexConfig
 
-
 # --- Function Call Models ---
 
 class FunctionCall(BaseModel):
@@ -178,7 +177,10 @@ NAVIGATION_FUNCTION_DECLARATIONS = [
     },
     {
         "name": "navigate_url",
-        "description": "Navigate to a specific URL (must be same-origin unless cross-origin allowed)",
+        "description": (
+            "Navigate to a specific URL"
+            " (must be same-origin unless cross-origin allowed)"
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -311,7 +313,8 @@ class AIEngine:
             prompt = (
                 "Analyze this HTML page and classify its state.\n"
                 "Return a JSON object with:\n"
-                "- page_state: one of CONTENT_VISIBLE, GATED, BLOCKED, ERROR, LOADING, REDIRECT, EMPTY\n"
+                "- page_state: one of CONTENT_VISIBLE, GATED, BLOCKED,"
+                " ERROR, LOADING, REDIRECT, EMPTY\n"
                 "- confidence: float 0.0-1.0\n"
                 "- content_regions_detected: integer count of main content areas\n"
                 "- obstruction_indicators: list of strings describing any obstructions\n\n"
@@ -367,11 +370,12 @@ class AIEngine:
             attempts_context = ""
             if prior_attempts:
                 attempts_context = (
-                    f"\nPrior failed attempts:\n" + "\n".join(f"- {a}" for a in prior_attempts)
+                    "\nPrior failed attempts:\n" + "\n".join(f"- {a}" for a in prior_attempts)
                 )
 
             prompt = (
-                f"You are navigating a web page that has an obstruction of type: {obstruction_type}\n"
+                "You are navigating a web page that has an"
+                f" obstruction of type: {obstruction_type}\n"
                 f"Target extraction schema: {json.dumps(target_schema)}\n"
                 f"{attempts_context}\n\n"
                 "Generate a navigation plan as a list of browser actions.\n"

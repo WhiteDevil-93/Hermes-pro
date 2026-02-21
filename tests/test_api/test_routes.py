@@ -46,7 +46,8 @@ class TestRunEndpoints:
         assert response.status_code == 404
 
     @pytest.mark.skipif(
-        not __import__("shutil").which("chromium") and not __import__("shutil").which("chromium-browser"),
+        not __import__("shutil").which("chromium")
+        and not __import__("shutil").which("chromium-browser"),
         reason="Playwright browser not installed — skips in environments without browser binaries",
     )
     def test_create_run_returns_run_id(self, client):

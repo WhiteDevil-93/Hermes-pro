@@ -1,6 +1,5 @@
 """Tests for Conduit phase definitions and transition validation."""
 
-import pytest
 
 from server.conduit.phases import TERMINAL_PHASES, VALID_TRANSITIONS, Phase
 

@@ -1,6 +1,5 @@
 """Tests for the Conduit engine — phase transitions and state machine integrity."""
 
-import pytest
 
 from server.ai_engine.engine import (
     ALL_ALLOWED_FUNCTIONS,
@@ -8,7 +7,6 @@ from server.ai_engine.engine import (
     validate_function_call,
 )
 from server.browser.obstruction import ObstructionType, detect_obstruction
-from server.conduit.phases import TERMINAL_PHASES, VALID_TRANSITIONS, Phase
 from server.config.settings import HermesConfig
 
 
@@ -65,11 +63,17 @@ class TestFunctionCallValidation:
         assert validate_function_call(call) is None
 
     def test_all_navigation_functions_in_allowlist(self):
-        nav_functions = {"click", "scroll", "fill_form", "hover", "press_key", "wait_for", "navigate_url"}
+        nav_functions = {
+            "click", "scroll", "fill_form", "hover",
+            "press_key", "wait_for", "navigate_url",
+        }
         assert nav_functions.issubset(ALL_ALLOWED_FUNCTIONS)
 
     def test_all_extraction_functions_in_allowlist(self):
-        ext_functions = {"extract_structured", "repair_extraction", "deduplicate", "convert_prose_to_fields"}
+        ext_functions = {
+            "extract_structured", "repair_extraction",
+            "deduplicate", "convert_prose_to_fields",
+        }
         assert ext_functions.issubset(ALL_ALLOWED_FUNCTIONS)
 
 
@@ -82,22 +86,36 @@ class TestObstructionDetection:
         assert result.obstruction_type == ObstructionType.NONE
 
     def test_detects_cookie_banner(self):
-        html = '<html><body><div id="cookie-consent"><button class="accept">Accept</button></div></body></html>'
+        html = (
+            '<html><body><div id="cookie-consent">'
+            '<button class="accept">Accept</button>'
+            "</div></body></html>"
+        )
         result = detect_obstruction(html)
         assert result.obstruction_type == ObstructionType.CONSENT_GATE
 
     def test_detects_captcha(self):
-        html = '<html><body><div class="captcha-container"><iframe src="https://recaptcha.example.com"></iframe></div></body></html>'
+        html = (
+            '<html><body><div class="captcha-container">'
+            '<iframe src="https://recaptcha.example.com">'
+            "</iframe></div></body></html>"
+        )
         result = detect_obstruction(html)
         assert result.obstruction_type == ObstructionType.HARD_BLOCK
 
     def test_detects_content_reveal(self):
-        html = '<html><body><button class="read-more">Read More</button><p>Content</p></body></html>'
+        html = (
+            '<html><body><button class="read-more">'
+            "Read More</button><p>Content</p></body></html>"
+        )
         result = detect_obstruction(html)
         assert result.obstruction_type == ObstructionType.CONTENT_REVEAL
 
     def test_hard_block_has_highest_priority(self):
-        html = '<html><body><div class="captcha"></div><div class="cookie-consent"></div></body></html>'
+        html = (
+            '<html><body><div class="captcha"></div>'
+            '<div class="cookie-consent"></div></body></html>'
+        )
         result = detect_obstruction(html)
         assert result.obstruction_type == ObstructionType.HARD_BLOCK
 

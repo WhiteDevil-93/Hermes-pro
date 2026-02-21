@@ -36,13 +36,12 @@ from urllib.parse import urlparse
 from server.ai_engine.engine import (
     AIEngine,
     FunctionCall,
-    NavigationPlan,
     validate_function_call,
 )
 from server.browser.layer import ActionStatus, BrowserLayer, DOMSnapshot
 from server.browser.obstruction import ObstructionType, detect_obstruction
-from server.config.settings import HermesConfig
 from server.conduit.phases import TERMINAL_PHASES, VALID_TRANSITIONS, Phase
+from server.config.settings import HermesConfig
 from server.pipeline.extraction import ExtractionRecord, FieldValue, RecordMetadata
 from server.pipeline.heuristic import heuristic_extract
 from server.pipeline.manager import PipelineManager, RunMetadata
@@ -239,7 +238,10 @@ class Conduit:
                 await self._backoff(self._attempts)
                 # Stay in NAVIGATE phase (re-enter on next loop iteration)
             else:
-                await self._fail(f"Navigation failed after {self._attempts} attempts: {result.detail}")
+                await self._fail(
+                    f"Navigation failed after {self._attempts}"
+                    f" attempts: {result.detail}"
+                )
 
     async def _phase_assess(self) -> None:
         """ASSESS: Evaluate DOM state — is content accessible or obstructed?"""

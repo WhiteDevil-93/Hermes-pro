@@ -6,7 +6,6 @@ Fast, deterministic, no AI cost. Used when site structure is known and stable.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 from playwright.async_api import Page
 
