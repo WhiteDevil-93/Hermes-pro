@@ -1,0 +1,35 @@
+{
+  "name": "Hermes Development",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {}
+  },
+  "forwardPorts": [8080],
+  "postCreateCommand": "pip install -e '.[dev]' && playwright install chromium --with-deps",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.debugpy"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"]
+      }
+    }
+  },
+  "containerEnv": {
+    "HERMES_DATA_DIR": "/workspaces/Hermes-pro/data",
+    "HERMES_PORT": "8080",
+    "HERMES_LOG_LEVEL": "DEBUG"
+  },
+  "portsAttributes": {
+    "8080": {
+      "label": "Hermes Server",
+      "onAutoForward": "notify"
+    }
+  }
+}

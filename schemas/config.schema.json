@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes.dev/schemas/config.schema.json",
+  "title": "Hermes Run Configuration",
+  "description": "Schema for Hermes scrape run configuration",
+  "type": "object",
+  "required": ["target_url"],
+  "properties": {
+    "target_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "The URL to scrape"
+    },
+    "extraction_schema": {
+      "type": "object",
+      "description": "Target schema for data extraction"
+    },
+    "extraction_mode": {
+      "type": "string",
+      "enum": ["heuristic", "ai", "hybrid"],
+      "default": "heuristic"
+    },
+    "heuristic_selectors": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Mapping of field_name to CSS selector for heuristic extraction"
+    },
+    "allow_cross_origin": {
+      "type": "boolean",
+      "default": false
+    },
+    "retry": {
+      "type": "object",
+      "properties": {
+        "max_retries": { "type": "integer", "minimum": 0, "default": 3 },
+        "backoff_base_ms": { "type": "integer", "minimum": 100, "default": 1000 },
+        "backoff_max_ms": { "type": "integer", "minimum": 1000, "default": 30000 },
+        "jitter": { "type": "boolean", "default": true }
+      }
+    },
+    "timeouts": {
+      "type": "object",
+      "properties": {
+        "global_timeout_s": { "type": "integer", "minimum": 10, "default": 300 },
+        "page_load_timeout_s": { "type": "integer", "minimum": 5, "default": 30 },
+        "interaction_timeout_s": { "type": "integer", "minimum": 1, "default": 10 },
+        "ai_timeout_s": { "type": "integer", "minimum": 5, "default": 60 },
+        "extraction_timeout_s": { "type": "integer", "minimum": 5, "default": 60 }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "properties": {
+        "headless": { "type": "boolean", "default": true },
+        "viewport_width": { "type": "integer", "default": 1280 },
+        "viewport_height": { "type": "integer", "default": 720 },
+        "user_agent": { "type": ["string", "null"] },
+        "locale": { "type": "string", "default": "en-US" }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "properties": {
+        "data_dir": { "type": "string", "default": "./data" },
+        "debug_mode": { "type": "boolean", "default": false },
+        "min_confidence_threshold": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.5 }
+      }
+    }
+  }
+}

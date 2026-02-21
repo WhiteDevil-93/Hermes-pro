@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes.dev/schemas/extraction.schema.json",
+  "title": "Hermes Extraction Record",
+  "description": "Schema for structured extraction output records with confidence scores and provenance",
+  "type": "object",
+  "required": ["records"],
+  "properties": {
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fields", "metadata"],
+        "properties": {
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["value", "confidence"],
+              "properties": {
+                "value": {},
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0
+                },
+                "source_selector": {
+                  "type": ["string", "null"]
+                }
+              }
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "required": ["source_url", "dom_hash", "extracted_at", "extraction_mode"],
+            "properties": {
+              "source_url": { "type": "string", "format": "uri" },
+              "dom_hash": { "type": "string" },
+              "extracted_at": { "type": "string", "format": "date-time" },
+              "ai_model": { "type": "string" },
+              "extraction_mode": {
+                "type": "string",
+                "enum": ["heuristic", "ai", "hybrid"]
+              }
+            }
+          },
+          "completeness_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "is_partial": { "type": "boolean" },
+          "duplicate_of": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "completeness_score": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "duplicates_detected": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
