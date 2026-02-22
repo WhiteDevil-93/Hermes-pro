@@ -17,13 +17,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from server.api.auth import (
-    AUTH_REQUIRED_DETAIL,
-    extract_principal_from_headers,
-    require_authenticated_principal,
-)
+from server.api.validators import validate_target_url
 from server.conduit.engine import Conduit
-from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
+from server.config.settings import (
+    BrowserConfig,
+    HermesConfig,
+    PipelineConfig,
+    TargetURLPolicyConfig,
+)
 from server.signals.types import Signal
 
 router = APIRouter()
@@ -117,6 +118,8 @@ async def create_run(
     The run executes asynchronously. Use the returned run_id
     to monitor progress via GET /runs/{run_id} or WebSocket.
     """
+    validate_target_url(request.target_url, TargetURLPolicyConfig())
+
     config = HermesConfig(
         target_url=request.target_url,
         extraction_schema=request.extraction_schema,
@@ -155,7 +158,8 @@ async def create_run(
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
-            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
+            # Ensure we always clean up per-run state, regardless
+            # of success, failure, or cancellation
             _active_runs.pop(run_id, None)
             _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
