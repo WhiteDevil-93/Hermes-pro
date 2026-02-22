@@ -1,6 +1,5 @@
 """Tests for the Conduit engine — phase transitions and state machine integrity."""
 
-
 from server.ai_engine.engine import (
     ALL_ALLOWED_FUNCTIONS,
     FunctionCall,
@@ -64,15 +63,22 @@ class TestFunctionCallValidation:
 
     def test_all_navigation_functions_in_allowlist(self):
         nav_functions = {
-            "click", "scroll", "fill_form", "hover",
-            "press_key", "wait_for", "navigate_url",
+            "click",
+            "scroll",
+            "fill_form",
+            "hover",
+            "press_key",
+            "wait_for",
+            "navigate_url",
         }
         assert nav_functions.issubset(ALL_ALLOWED_FUNCTIONS)
 
     def test_all_extraction_functions_in_allowlist(self):
         ext_functions = {
-            "extract_structured", "repair_extraction",
-            "deduplicate", "convert_prose_to_fields",
+            "extract_structured",
+            "repair_extraction",
+            "deduplicate",
+            "convert_prose_to_fields",
         }
         assert ext_functions.issubset(ALL_ALLOWED_FUNCTIONS)
 
@@ -105,8 +111,7 @@ class TestObstructionDetection:
 
     def test_detects_content_reveal(self):
         html = (
-            '<html><body><button class="read-more">'
-            "Read More</button><p>Content</p></body></html>"
+            '<html><body><button class="read-more">Read More</button><p>Content</p></body></html>'
         )
         result = detect_obstruction(html)
         assert result.obstruction_type == ObstructionType.CONTENT_REVEAL

@@ -10,16 +10,20 @@ Provides endpoints for:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import os
+from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import HermesConfig
+from server.config.settings import HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
+
+_pipeline_config = PipelineConfig()
 
 # In-memory store for active and completed runs
 _active_runs: dict[str, Conduit] = {}
@@ -30,12 +34,13 @@ _websocket_connections: dict[str, list[WebSocket]] = {}
 
 # --- Request/Response Models ---
 
+
 class RunRequest(BaseModel):
     """Request to initiate a scrape run."""
 
     target_url: str
     extraction_schema: dict[str, Any] = Field(default_factory=dict)
-    extraction_mode: str = "heuristic"
+    extraction_mode: Literal["heuristic", "ai", "hybrid"] = "heuristic"
     heuristic_selectors: dict[str, str] = Field(default_factory=dict)
     allow_cross_origin: bool = False
     headless: bool = True
@@ -64,6 +69,7 @@ class RunStatus(BaseModel):
 
 # --- Endpoints ---
 
+
 @router.post("/runs", response_model=RunResponse)
 async def create_run(request: RunRequest) -> RunResponse:
     """Initiate a new scrape run.
@@ -77,8 +83,8 @@ async def create_run(request: RunRequest) -> RunResponse:
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
-        browser={"headless": request.headless},
-        pipeline={"debug_mode": request.debug_mode},
+        browser=BrowserConfig(headless=request.headless),
+        pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
 
     conduit = Conduit(config)
@@ -107,7 +113,10 @@ async def create_run(request: RunRequest) -> RunResponse:
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
             _active_runs.pop(run_id, None)
+            _run_tasks.pop(run_id, None)
+            _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
     _run_tasks[run_id] = task
@@ -148,6 +157,11 @@ async def get_run_status(run_id: str) -> RunStatus:
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
 
+def _get_data_dir() -> Path:
+    """Resolve the data directory from environment or default."""
+    return Path(os.getenv("HERMES_DATA_DIR", "./data"))
+
+
 @router.get("/runs/{run_id}/signals")
 async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
     """Get all signals for a run."""
@@ -155,11 +169,9 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
         return [s.model_dump() for s in _active_runs[run_id].signals.signals]
 
     # Try to load from ledger
-    from pathlib import Path
-
     from server.signals.emitter import SignalEmitter
 
-    data_dir = Path("./data")
+    data_dir = _pipeline_config.data_dir
     ledger_path = data_dir / run_id / "signals.jsonl"
     if ledger_path.exists():
         signals = SignalEmitter.load_ledger(ledger_path)
@@ -171,11 +183,9 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
 @router.get("/runs/{run_id}/records")
 async def get_run_records(run_id: str) -> list[dict[str, Any]]:
     """Get extracted records for a completed run."""
-    from pathlib import Path
-
     from server.pipeline.manager import PipelineManager
 
-    data_dir = Path("./data")
+    data_dir = _pipeline_config.data_dir
     output_path = data_dir / run_id / "records.jsonl"
 
     if output_path.exists():
@@ -212,6 +222,7 @@ async def list_runs() -> dict[str, Any]:
 
 
 # --- WebSocket for real-time Signal streaming ---
+
 
 @router.websocket("/ws/runs/{run_id}")
 async def websocket_signals(websocket: WebSocket, run_id: str) -> None:

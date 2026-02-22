@@ -84,6 +84,8 @@ class SignalEmitter:
 
     async def _persist(self, signal: Signal) -> None:
         """Append signal to the JSONL ledger file."""
+        if self._ledger_path is None:
+            return
         line = signal.model_dump_json() + "\n"
         with open(self._ledger_path, "a") as f:
             f.write(line)
