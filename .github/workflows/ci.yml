@@ -32,6 +32,9 @@ jobs:
       - name: Install dev dependencies
         run: pip install ruff mypy
 
+      - name: Check license documentation consistency
+        run: python scripts/check_license_consistency.py
+
       - name: Lint (ruff check)
         run: ruff check server/ tests/
 

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev lint format typecheck test test-cov docker-build docker-up docker-down clean
+.PHONY: help install dev lint format typecheck docs-check test test-cov docker-build docker-up docker-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -26,6 +26,10 @@ format: ## Auto-format code
 
 typecheck: ## Run type checker (mypy)
 	mypy server/
+
+# ── Documentation Checks ─────────────────────────────────────────────
+docs-check: ## Validate documentation metadata consistency
+	python scripts/check_license_consistency.py
 
 # ── Testing ──────────────────────────────────────────────────────────
 test: ## Run tests
