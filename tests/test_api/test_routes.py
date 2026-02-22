@@ -10,46 +10,9 @@ from fastapi.testclient import TestClient
 from server.api import routes
 from server.api.app import app
 
-class _DummyTask:
-    def __init__(self) -> None:
-        self.cancelled = False
-
-    def cancel(self) -> None:
-        self.cancelled = True
-
-
-@pytest.fixture(autouse=True)
-def clear_run_state(tmp_path, monkeypatch):
-    monkeypatch.setenv("HERMES_DATA_DIR", str(tmp_path))
-    routes._pipeline_config = routes.PipelineConfig()
-    routes._active_runs.clear()
-    routes._run_tasks.clear()
-    routes._run_results.clear()
-    routes._run_owners.clear()
-    routes._websocket_connections.clear()
-
-
 @pytest.fixture
 def client():
     return TestClient(app)
-
-
-class _DummySignals:
-    def __init__(self):
-        self.signals = []
-
-    def subscribe(self, _callback):
-        return None
-
-
-class _DummyConduit:
-    def __init__(self, _config):
-        self.run_id = "run_test123"
-        self.signals = _DummySignals()
-
-    async def run(self):
-        return {"status": "complete", "phase": "COMPLETE"}
-
 
 class TestHealthEndpoint:
     def test_health_check(self, client):
@@ -60,6 +23,48 @@ class TestHealthEndpoint:
         assert data["service"] == "hermes"
         assert data["version"] == "2.0.0"
 
+class TestCorsConfiguration:
+    def test_dev_allows_wildcard_only_with_explicit_toggle(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "development")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.setenv("HERMES_DEV_ALLOW_ALL_ORIGINS", "true")
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == ["*"]
+
+    def test_dev_defaults_to_no_origins_without_toggle(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "development")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.delenv("HERMES_DEV_ALLOW_ALL_ORIGINS", raising=False)
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == []
+
+    def test_production_requires_explicit_origins(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "production")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.delenv("HERMES_DEV_ALLOW_ALL_ORIGINS", raising=False)
+
+        from server.api.app import _resolve_cors_origins
+
+        with pytest.raises(RuntimeError, match="HERMES_ALLOWED_ORIGINS"):
+            _resolve_cors_origins()
+
+    def test_production_accepts_configured_origins(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "production")
+        monkeypatch.setenv(
+            "HERMES_ALLOWED_ORIGINS",
+            "https://ui.example.com, https://admin.example.com",
+        )
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == [
+            "https://ui.example.com",
+            "https://admin.example.com",
+        ]
 
 class TestRunEndpoints:
     @staticmethod

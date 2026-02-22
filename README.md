@@ -93,6 +93,27 @@ curl http://localhost:8080/api/v1/runs
 | `HERMES_PORT` | Server port | `8080` |
 | `HERMES_LOG_LEVEL` | Logging verbosity | `INFO` |
 | `HERMES_MAX_CONCURRENT_RUNS` | Parallel run limit | `1` |
+| `HERMES_ENV` | Runtime environment (`development`, `local`, `dev`, `production`) | `development` |
+| `HERMES_ALLOWED_ORIGINS` | Comma-separated trusted CORS origins (required outside development/local/dev) | (empty) |
+| `HERMES_DEV_ALLOW_ALL_ORIGINS` | Enable permissive `*` CORS only for local development | `false` |
+| `HERMES_CORS_ALLOW_CREDENTIALS` | Enable CORS credentials (ignored when wildcard origin is active) | `false` |
+
+
+### CORS Configuration
+
+Hermes is **deny-by-default** for CORS unless origins are explicitly configured.
+
+- In `production` (or any `HERMES_ENV` value other than `development`, `local`, `dev`), you **must** set `HERMES_ALLOWED_ORIGINS`.
+- If production starts without `HERMES_ALLOWED_ORIGINS`, Hermes exits at startup with a clear configuration error.
+- For local development convenience, set `HERMES_DEV_ALLOW_ALL_ORIGINS=true` to allow `*`. This toggle is ignored outside development/local/dev environments.
+
+Example production configuration:
+
+```bash
+export HERMES_ENV=production
+export HERMES_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+export HERMES_CORS_ALLOW_CREDENTIALS=true
+```
 
 ### Extraction Modes
 
