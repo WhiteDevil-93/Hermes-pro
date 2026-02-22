@@ -75,7 +75,7 @@ class TargetURLPolicyConfig(BaseModel):
     block_private_network_targets: bool = Field(
         default_factory=lambda: os.getenv(
             "HERMES_BLOCK_PRIVATE_NETWORK_TARGETS", "true"
-        ).lower()
+        ).strip().lower()
         not in {"0", "false", "no"}
     )
 
