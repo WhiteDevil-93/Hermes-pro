@@ -85,8 +85,7 @@ class SignalEmitter:
     async def _persist(self, signal: Signal) -> None:
         """Append signal to the JSONL ledger file."""
         line = signal.model_dump_json() + "\n"
-        # Use synchronous write for simplicity; aiofiles for production
-        with open(self._ledger_path, "a") as f:
+        await asyncio.to_thread(lambda: open(self._ledger_path, "a").write(line))
             f.write(line)
 
     async def _broadcast(self, signal: Signal) -> None:
