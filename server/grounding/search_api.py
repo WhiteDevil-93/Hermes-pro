@@ -41,7 +41,7 @@ def _resolve_search_dir(data_dir: str | None) -> Path:
         else (base_dir / candidate_input).resolve()
     )
 
-    if candidate_dir == base_dir or base_dir in candidate_dir.parents:
+    if base_dir in candidate_dir.parents:
         return candidate_dir
 
     logger.warning(
