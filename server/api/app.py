@@ -17,10 +17,17 @@ app = FastAPI(
 )
 
 # CORS for WebUI
+_cors_origins_raw = os.getenv("HERMES_ALLOWED_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] or ["*"]
+_cors_credentials = (
+    os.getenv("HERMES_CORS_ALLOW_CREDENTIALS", "").lower() == "true"
+    and "*" not in _cors_origins
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("HERMES_ALLOWED_ORIGINS", "*").split(","),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
