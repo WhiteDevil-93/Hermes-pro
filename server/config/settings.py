@@ -53,9 +53,7 @@ class BrowserConfig(BaseModel):
 class PipelineConfig(BaseModel):
     """Data pipeline configuration."""
 
-    data_dir: Path = Field(
-        default_factory=lambda: Path(os.getenv("HERMES_DATA_DIR", "./data"))
-    )
+    data_dir: Path = Field(default_factory=lambda: Path(os.getenv("HERMES_DATA_DIR", "./data")))
     debug_mode: bool = False
     min_confidence_threshold: float = 0.5
 

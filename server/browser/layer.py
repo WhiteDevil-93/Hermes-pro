@@ -117,17 +117,13 @@ class BrowserLayer:
         except Exception as e:
             return ActionResult(status=ActionStatus.FAILURE, detail=str(e))
 
-    async def scroll(
-        self, direction: str = "down", amount: str = "page"
-    ) -> ActionResult:
+    async def scroll(self, direction: str = "down", amount: str = "page") -> ActionResult:
         """Scroll the viewport."""
         if not self._page:
             return ActionResult(status=ActionStatus.FAILURE, detail="Browser not started")
         try:
             if amount == "end":
-                await self._page.evaluate(
-                    "window.scrollTo(0, document.body.scrollHeight)"
-                )
+                await self._page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             elif amount == "page":
                 delta = -720 if direction == "up" else 720
                 await self._page.mouse.wheel(0, delta)
@@ -150,9 +146,7 @@ class BrowserLayer:
             return ActionResult(status=ActionStatus.FAILURE, detail="Browser not started")
         try:
             await self._page.fill(selector, value, timeout=10000)
-            return ActionResult(
-                status=ActionStatus.SUCCESS, detail=f"Filled {selector}"
-            )
+            return ActionResult(status=ActionStatus.SUCCESS, detail=f"Filled {selector}")
         except Exception as e:
             return ActionResult(status=ActionStatus.FAILURE, detail=str(e))
 
@@ -162,9 +156,7 @@ class BrowserLayer:
             return ActionResult(status=ActionStatus.FAILURE, detail="Browser not started")
         try:
             await self._page.hover(selector, timeout=10000)
-            return ActionResult(
-                status=ActionStatus.SUCCESS, detail=f"Hovered {selector}"
-            )
+            return ActionResult(status=ActionStatus.SUCCESS, detail=f"Hovered {selector}")
         except Exception as e:
             return ActionResult(status=ActionStatus.FAILURE, detail=str(e))
 
@@ -239,9 +231,7 @@ class BrowserLayer:
                     locale=self._config.locale,
                 )
                 self._page = await self._context.new_page()
-                return ActionResult(
-                    status=ActionStatus.SUCCESS, detail="Context restarted"
-                )
+                return ActionResult(status=ActionStatus.SUCCESS, detail="Context restarted")
             return ActionResult(
                 status=ActionStatus.FAILURE, detail="No browser to restart context on"
             )

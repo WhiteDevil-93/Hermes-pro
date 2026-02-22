@@ -69,7 +69,7 @@ CONTENT_REVEAL_SELECTORS = [
     '[class*="expand"]',
     'button[class*="accordion"]',
     '[data-toggle="collapse"]',
-    'details > summary',
+    "details > summary",
 ]
 
 
