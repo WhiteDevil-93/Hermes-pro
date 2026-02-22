@@ -115,8 +115,6 @@ async def create_run(request: RunRequest) -> RunResponse:
             _active_runs.pop(run_id, None)
             _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
-            _run_tasks.pop(run_id, None)
-            _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
     _run_tasks[run_id] = task

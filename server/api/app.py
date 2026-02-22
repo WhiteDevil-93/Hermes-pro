@@ -20,7 +20,8 @@ app = FastAPI(
 _cors_origins_raw = os.getenv("HERMES_ALLOWED_ORIGINS", "")
 _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] or ["*"]
 _cors_credentials = (
-    os.getenv("HERMES_CORS_ALLOW_CREDENTIALS", "").lower() == "true" and "*" not in _cors_origins
+    os.getenv("HERMES_CORS_ALLOW_CREDENTIALS", "").lower() == "true"
+    and "*" not in _cors_origins
 )
 
 app.add_middleware(

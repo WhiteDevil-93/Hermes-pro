@@ -87,8 +87,7 @@ class SignalEmitter:
         if self._ledger_path is None:
             return
         line = signal.model_dump_json() + "\n"
-        path = self._ledger_path
-        await asyncio.to_thread(lambda: open(path, "a").write(line))
+        await asyncio.to_thread(lambda: open(self._ledger_path, "a").write(line))
 
     async def _broadcast(self, signal: Signal) -> None:
         """Notify all subscribers of a new signal."""
