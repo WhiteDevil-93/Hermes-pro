@@ -1,0 +1,39 @@
+version: "3.8"
+
+# Self-hosted GitHub Actions runner for Hermes
+# Usage:
+#   1. Create a runner token: gh api repos/OWNER/Hermes-pro/actions/runners/registration-token -f
+#   2. Export vars:
+#        export GITHUB_OWNER=WhiteDevil-93
+#        export GITHUB_REPO=Hermes-pro
+#        export RUNNER_TOKEN=<token from step 1>
+#   3. docker compose up -d --scale runner=2  (for 2 parallel runners)
+
+services:
+  runner:
+    image: myoung34/github-runner:latest
+    restart: unless-stopped
+    environment:
+      REPO_URL: "https://github.com/${GITHUB_OWNER:-WhiteDevil-93}/${GITHUB_REPO:-Hermes-pro}"
+      RUNNER_TOKEN: "${RUNNER_TOKEN}"
+      RUNNER_NAME_PREFIX: "hermes-self-hosted"
+      RUNNER_WORKDIR: /tmp/runner/work
+      RUNNER_GROUP: "Default"
+      RUNNER_SCOPE: "repo"
+      LABELS: "self-hosted,linux,x64,hermes"
+      EPHEMERAL: "true"
+      DISABLE_AUTO_UPDATE: "false"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-work:/tmp/runner/work
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+
+volumes:
+  runner-work:

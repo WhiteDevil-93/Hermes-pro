@@ -42,23 +42,36 @@ jobs:
         run: mypy server/ --ignore-missing-imports --no-error-summary
 
   test:
-    name: Test
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Cache pip
         uses: actions/cache@v5
         with:
           path: ~/.cache/pip
-          key: pip-test-${{ hashFiles('pyproject.toml') }}
-          restore-keys: pip-test-
+          key: pip-test-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-test-${{ matrix.python-version }}-
+            pip-test-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: playwright-${{ matrix.python-version }}-
 
       - name: Install dependencies
         run: |
@@ -66,7 +79,15 @@ jobs:
           playwright install chromium --with-deps
 
       - name: Run tests
-        run: pytest tests/ -v --cov=server --cov-report=term-missing
+        run: pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 30
 
   schemas:
     name: Validate JSON Schemas
@@ -112,8 +133,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: docker-${{ hashFiles('Dockerfile', 'pyproject.toml') }}
+          restore-keys: docker-
+
       - name: Build Docker image
-        run: docker build -t hermes:test .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: hermes:test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: Verify container starts
         run: |
@@ -121,3 +158,8 @@ jobs:
           sleep 5
           curl -f http://localhost:8080/health || exit 1
           docker stop hermes-test
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache

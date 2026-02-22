@@ -1,0 +1,78 @@
+name: Runner Health Check
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # Every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check-github-hosted:
+    name: GitHub-Hosted Runner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Runner info
+        run: |
+          echo "## GitHub-Hosted Runner" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner OS | $RUNNER_OS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner Arch | $RUNNER_ARCH |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner Name | $RUNNER_NAME |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CPUs | $(nproc) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Memory | $(free -h | awk '/Mem:/{print $2}') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Disk Free | $(df -h / | awk 'NR==2{print $4}') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Docker | $(docker --version 2>/dev/null || echo 'N/A') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Python | $(python3 --version 2>/dev/null || echo 'N/A') |" >> "$GITHUB_STEP_SUMMARY"
+
+  check-self-hosted:
+    name: Self-Hosted Runner
+    runs-on: [self-hosted, hermes]
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    continue-on-error: true
+    timeout-minutes: 5
+    steps:
+      - name: Runner info
+        run: |
+          echo "## Self-Hosted Runner" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner OS | $RUNNER_OS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner Arch | $RUNNER_ARCH |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Runner Name | $RUNNER_NAME |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CPUs | $(nproc) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Memory | $(free -h | awk '/Mem:/{print $2}') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Disk Free | $(df -h / | awk 'NR==2{print $4}') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Docker | $(docker --version 2>/dev/null || echo 'N/A') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Python | $(python3 --version 2>/dev/null || echo 'N/A') |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Uptime | $(uptime) |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify Docker access
+        run: docker info > /dev/null 2>&1 && echo "Docker OK" || echo "Docker unavailable"
+
+      - name: Verify workspace
+        run: |
+          echo "Workspace: $GITHUB_WORKSPACE"
+          df -h "$GITHUB_WORKSPACE"
+
+  list-runners:
+    name: List All Runners
+    runs-on: ubuntu-latest
+    steps:
+      - name: List registered runners
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## Registered Runners" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/${{ github.repository }}/actions/runners" \
+            --jq '.runners[] | "  \(.name) | \(.status) | OS: \(.os) | Labels: \([.labels[].name] | join(", "))"' \
+            >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "  No runners found or insufficient permissions" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          TOTAL=$(gh api "repos/${{ github.repository }}/actions/runners" --jq '.total_count' 2>/dev/null || echo "0")
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total runners: $TOTAL**" >> "$GITHUB_STEP_SUMMARY"
