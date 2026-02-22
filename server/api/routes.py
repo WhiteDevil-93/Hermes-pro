@@ -10,8 +10,6 @@ Provides endpoints for:
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -19,23 +17,14 @@ from pydantic import BaseModel, Field
 
 from server.api.validators import validate_target_url
 from server.conduit.engine import Conduit
-from server.config.settings import (
-    BrowserConfig,
-    HermesConfig,
-    PipelineConfig,
-    TargetURLPolicyConfig,
-)
+from server.api.run_repository import RunRepository
+from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
 
 _pipeline_config = PipelineConfig()
-
-# In-memory store for active and completed runs
-_active_runs: dict[str, Conduit] = {}
-_run_tasks: dict[str, asyncio.Task] = {}
-_run_results: dict[str, dict[str, Any]] = {}
-_run_owners: dict[str, str] = {}
+_run_repository = RunRepository.from_environment(_pipeline_config.data_dir)
 _websocket_connections: dict[str, list[WebSocket]] = {}
 
 
@@ -134,8 +123,7 @@ async def create_run(
     conduit = Conduit(config)
     run_id = conduit.run_id
 
-    _active_runs[run_id] = conduit
-    _run_owners[run_id] = principal
+    _run_repository.register_active(conduit)
 
     # Register WebSocket broadcaster
     async def signal_broadcaster(signal: Signal) -> None:
@@ -156,16 +144,14 @@ async def create_run(
     async def run_task() -> None:
         try:
             result = await conduit.run()
-            _run_results[run_id] = result
+            _run_repository.complete_run(run_id, result, request.target_url)
         finally:
-            # Ensure we always clean up per-run state, regardless
-            # of success, failure, or cancellation
-            _active_runs.pop(run_id, None)
-            _run_tasks.pop(run_id, None)
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
+            _run_repository.remove_active(run_id)
             _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
-    _run_tasks[run_id] = task
+    _run_repository.set_task(run_id, task)
 
     return RunResponse(
         run_id=run_id,
@@ -183,8 +169,8 @@ async def get_run_status(
     _enforce_run_access(run_id, principal)
 
     # Check active runs
-    if run_id in _active_runs:
-        conduit = _active_runs[run_id]
+    conduit = _run_repository.get_active(run_id)
+    if conduit is not None:
         return RunStatus(
             run_id=run_id,
             phase=conduit.phase.value,
@@ -193,16 +179,16 @@ async def get_run_status(
         )
 
     # Check completed runs
-    if run_id in _run_results:
-        result = _run_results[run_id]
+    summary = _run_repository.get_completed(run_id)
+    if summary is not None:
         return RunStatus(
             run_id=run_id,
-            phase=result.get("phase", "UNKNOWN"),
-            status=result.get("status", "unknown"),
-            records_count=result.get("records_count", 0),
-            duration_s=result.get("duration_s", 0),
-            ai_calls=result.get("ai_calls", 0),
-            signals_count=result.get("signals_count", 0),
+            phase=summary.phase,
+            status=summary.status,
+            records_count=summary.records_count,
+            duration_s=summary.duration_s,
+            ai_calls=summary.ai_calls,
+            signals_count=summary.signals_count,
         )
 
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
@@ -214,10 +200,9 @@ async def get_run_signals(
     principal: str = Depends(require_authenticated_principal),
 ) -> list[dict[str, Any]]:
     """Get all signals for a run."""
-    _enforce_run_access(run_id, principal)
-
-    if run_id in _active_runs:
-        return [s.model_dump() for s in _active_runs[run_id].signals.signals]
+    conduit = _run_repository.get_active(run_id)
+    if conduit is not None:
+        return [s.model_dump() for s in conduit.signals.signals]
 
     # Try to load from ledger
     from server.signals.emitter import SignalEmitter
@@ -257,31 +242,19 @@ async def abort_run(
     principal: str = Depends(require_authenticated_principal),
 ) -> dict[str, str]:
     """Abort an active run."""
-    _enforce_run_access(run_id, principal)
-
-    if run_id in _run_tasks:
-        task = _run_tasks[run_id]
-        task.cancel()
-        _active_runs.pop(run_id, None)
+    if _run_repository.abort_run(run_id):
         return {"run_id": run_id, "status": "aborted"}
 
     raise HTTPException(status_code=404, detail=f"Active run {run_id} not found")
 
 
 @router.get("/runs")
-async def list_runs(principal: str = Depends(require_authenticated_principal)) -> dict[str, Any]:
-    """List all active and recent completed runs owned by the caller."""
-    active = [
-        {"run_id": rid, "phase": c.phase.value, "status": "running"}
-        for rid, c in _active_runs.items()
-        if _get_run_owner(rid) == principal
-    ]
-    completed = [
-        {"run_id": rid, "status": result.get("status", "unknown"), **result}
-        for rid, result in _run_results.items()
-        if _get_run_owner(rid) == principal
-    ]
-    return {"active": active, "completed": completed}
+async def list_runs() -> dict[str, Any]:
+    """List all active and recent completed runs."""
+    return {
+        "active": _run_repository.list_active(),
+        "completed": _run_repository.list_completed(),
+    }
 
 
 # --- WebSocket for real-time Signal streaming ---
@@ -312,8 +285,9 @@ async def websocket_signals(websocket: WebSocket, run_id: str) -> None:
 
     try:
         # Send existing signals as initial state
-        if run_id in _active_runs:
-            for signal in _active_runs[run_id].signals.signals:
+        conduit = _run_repository.get_active(run_id)
+        if conduit is not None:
+            for signal in conduit.signals.signals:
                 await websocket.send_text(signal.model_dump_json())
 
         # Keep connection alive until client disconnects or run completes
