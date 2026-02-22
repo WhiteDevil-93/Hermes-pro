@@ -163,6 +163,12 @@ INIT -> NAVIGATE -> ASSESS -> EXTRACT -> VALIDATE -> PERSIST -> COMPLETE
 
 Any phase can transition to `FAIL`. Every transition emits a Signal.
 
+
+## Operations
+
+- SLO dashboards and alerts: `docs/operations_slos.md`
+- Deployment profiles and security defaults: `docs/deployment_profiles.md`
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

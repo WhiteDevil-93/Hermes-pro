@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
 import aiofiles
 
 from server.signals.types import Signal, SignalType
+from server.telemetry.errors import ErrorCode, emit_structured_error
+
+logger = logging.getLogger(__name__)
 
 
 class SignalEmitter:
@@ -99,9 +103,15 @@ class SignalEmitter:
                 result = subscriber(signal)
                 if asyncio.iscoroutine(result):
                     await result
-            except Exception:
+            except Exception as exc:
                 # Subscribers must not break the emission pipeline
-                pass
+                emit_structured_error(
+                    logger,
+                    code=ErrorCode.SIGNAL_SUBSCRIBER_FAILURE,
+                    message=str(exc),
+                    suppressed=True,
+                    run_id=self._run_id,
+                )
 
     async def emit_phase_transition(
         self, from_phase: str, to_phase: str, context: dict[str, Any] | None = None

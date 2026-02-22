@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
-from datetime import datetime, timezone
+import logging
+import os
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -20,24 +21,20 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from server.api.validators import validate_target_url
+from server.api.run_repository import InMemoryRunRepository
+from server.api.run_service import RunService
 from server.conduit.engine import Conduit
-from server.config.settings import APIConfig, BrowserConfig, HermesConfig, PipelineConfig
-from server.signals.types import Signal
+from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
+from server.telemetry.errors import ErrorCode, emit_structured_error
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _pipeline_config = PipelineConfig()
-_api_config = APIConfig()
+_run_service = RunService(InMemoryRunRepository())
 
-# In-memory store for active and completed runs
-_active_runs: dict[str, Conduit] = {}
-_run_tasks: dict[str, asyncio.Task] = {}
-_run_results: dict[str, dict[str, Any]] = {}
-_run_tokens: dict[str, str] = {}
-_run_order: list[str] = []
-_websocket_connections: dict[str, list[WebSocket]] = {}
-_run_summary_ledger = _pipeline_config.data_dir / "run_summaries.jsonl"
+
+# --- Request/Response Models ---
 
 
 class RunRequest(BaseModel):
@@ -191,41 +188,7 @@ async def create_run(request: RunRequest, _: None = Depends(require_api_access))
     )
 
     conduit = Conduit(config)
-    run_id = conduit.run_id
-    run_token = secrets.token_urlsafe(24)
-
-    _active_runs[run_id] = conduit
-    _run_tokens[run_id] = run_token
-
-    async def signal_broadcaster(signal: Signal) -> None:
-        if run_id in _websocket_connections:
-            data = signal.model_dump_json()
-            disconnected = []
-            for ws in _websocket_connections[run_id]:
-                try:
-                    await ws.send_text(data)
-                except Exception:
-                    disconnected.append(ws)
-            for ws in disconnected:
-                _websocket_connections[run_id].remove(ws)
-
-    conduit.signals.subscribe(signal_broadcaster)
-
-    async def run_task() -> None:
-        try:
-            result = await conduit.run()
-            result["completed_at"] = datetime.now(timezone.utc).isoformat()
-            _run_results[run_id] = result
-            _run_order.append(run_id)
-            _evict_if_needed()
-            _append_run_summary(result)
-        finally:
-            _active_runs.pop(run_id, None)
-            _run_tasks.pop(run_id, None)
-            _websocket_connections.pop(run_id, None)
-
-    task = asyncio.create_task(run_task())
-    _run_repository.set_task(run_id, task)
+    run_id = await _run_service.create_run(conduit)
 
     return RunResponse(
         run_id=run_id,
@@ -236,52 +199,17 @@ async def create_run(request: RunRequest, _: None = Depends(require_api_access))
 
 
 @router.get("/runs/{run_id}", response_model=RunStatus)
-async def get_run_status(
-    run_id: str,
-    run_token: str | None = Query(default=None),
-    _: None = Depends(require_api_access),
-) -> RunStatus:
-    _validate_run_token(run_id, run_token)
-
-    if run_id in _active_runs:
-        conduit = _active_runs[run_id]
-        return RunStatus(
-            run_id=run_id,
-            phase=conduit.phase.value,
-            status="running",
-            signals_count=len(conduit.signals.signals),
-        )
-
-    if run_id in _run_results:
-        result = _run_results[run_id]
-    else:
-        persisted = _load_run_summaries()
-        result = persisted.get(run_id)
-
-    if result:
-        return RunStatus(
-            run_id=run_id,
-            phase=summary.phase,
-            status=summary.status,
-            records_count=summary.records_count,
-            duration_s=summary.duration_s,
-            ai_calls=summary.ai_calls,
-            signals_count=summary.signals_count,
-        )
-
-    raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+async def get_run_status(run_id: str) -> RunStatus:
+    """Get the current status of a run."""
+    return RunStatus(**_run_service.get_status(run_id))
 
 
 @router.get("/runs/{run_id}/signals")
-async def get_run_signals(
-    run_id: str,
-    run_token: str | None = Query(default=None),
-    _: None = Depends(require_api_access),
-) -> list[dict[str, Any]]:
-    _validate_run_token(run_id, run_token)
-
-    if run_id in _active_runs:
-        return [s.model_dump() for s in _active_runs[run_id].signals.signals]
+async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
+    """Get all signals for a run."""
+    active_signals = _run_service.get_active_signals(run_id)
+    if active_signals is not None:
+        return active_signals
 
     from server.signals.emitter import SignalEmitter
 
@@ -315,33 +243,16 @@ async def get_run_records(
 
 
 @router.post("/runs/{run_id}/abort")
-async def abort_run(
-    run_id: str,
-    run_token: str | None = Query(default=None),
-    _: None = Depends(require_api_access),
-) -> dict[str, str]:
-    _validate_run_token(run_id, run_token)
-
-    if run_id in _run_tasks:
-        task = _run_tasks[run_id]
-        task.cancel()
-        _active_runs.pop(run_id, None)
-        return {"run_id": run_id, "status": "aborted"}
-
-    raise HTTPException(status_code=404, detail=f"Active run {run_id} not found")
+async def abort_run(run_id: str) -> dict[str, str]:
+    """Abort an active run."""
+    _run_service.abort_run(run_id)
+    return {"run_id": run_id, "status": "aborted"}
 
 
 @router.get("/runs")
-async def list_runs(_: None = Depends(require_api_access)) -> dict[str, Any]:
-    active = [
-        {"run_id": rid, "phase": conduit.phase.value, "status": "running"}
-        for rid, conduit in _active_runs.items()
-    ]
-    completed = [
-        {"run_id": rid, "status": result.get("status", "unknown"), **result}
-        for rid, result in _run_results.items()
-    ]
-    return {"active": active, "completed": completed}
+async def list_runs() -> dict[str, Any]:
+    """List all active and recent completed runs."""
+    return _run_service.list_runs()
 
 
 @router.websocket("/ws/runs/{run_id}")
@@ -362,14 +273,12 @@ async def websocket_signals(
 
     await websocket.accept()
 
-    if run_id not in _websocket_connections:
-        _websocket_connections[run_id] = []
-    _websocket_connections[run_id].append(websocket)
+    _run_service.add_websocket(run_id, websocket)
 
     try:
-        if run_id in _active_runs:
-            for signal in _active_runs[run_id].signals.signals:
-                await websocket.send_text(signal.model_dump_json())
+        # Send existing signals as initial state
+        for signal in _run_service.get_active_signal_models(run_id):
+            await websocket.send_text(signal.model_dump_json())
 
         while True:
             try:
@@ -379,12 +288,16 @@ async def websocket_signals(
             except asyncio.TimeoutError:
                 try:
                     await websocket.send_text('{"type":"keepalive"}')
-                except Exception:
+                except Exception as exc:
+                    emit_structured_error(
+                        logger,
+                        code=ErrorCode.API_WEBSOCKET_SEND_FAILED,
+                        message=str(exc),
+                        suppressed=True,
+                        run_id=run_id,
+                    )
                     break
             except WebSocketDisconnect:
                 break
     finally:
-        if run_id in _websocket_connections:
-            _websocket_connections[run_id] = [
-                ws for ws in _websocket_connections[run_id] if ws != websocket
-            ]
+        _run_service.remove_websocket(run_id, websocket)
