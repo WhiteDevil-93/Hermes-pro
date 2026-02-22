@@ -16,10 +16,12 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import HermesConfig
+from server.config.settings import HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
+
+_pipeline_config = PipelineConfig()
 
 # In-memory store for active and completed runs
 _active_runs: dict[str, Conduit] = {}
@@ -155,11 +157,9 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
         return [s.model_dump() for s in _active_runs[run_id].signals.signals]
 
     # Try to load from ledger
-    from pathlib import Path
-
     from server.signals.emitter import SignalEmitter
 
-    data_dir = Path("./data")
+    data_dir = _pipeline_config.data_dir
     ledger_path = data_dir / run_id / "signals.jsonl"
     if ledger_path.exists():
         signals = SignalEmitter.load_ledger(ledger_path)
@@ -171,11 +171,9 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
 @router.get("/runs/{run_id}/records")
 async def get_run_records(run_id: str) -> list[dict[str, Any]]:
     """Get extracted records for a completed run."""
-    from pathlib import Path
-
     from server.pipeline.manager import PipelineManager
 
-    data_dir = Path("./data")
+    data_dir = _pipeline_config.data_dir
     output_path = data_dir / run_id / "records.jsonl"
 
     if output_path.exists():
