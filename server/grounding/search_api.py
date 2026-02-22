@@ -17,11 +17,42 @@ The endpoint conforms to Vertex AI's required interface:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _resolve_search_dir(data_dir: str | None) -> Path:
+    """Resolve and validate search directory under configured base data directory."""
+    base_dir = Path(os.getenv("HERMES_DATA_DIR", "./data")).resolve()
+
+    if not data_dir:
+        return base_dir
+
+    candidate_input = Path(data_dir)
+    candidate_dir = (
+        candidate_input.resolve()
+        if candidate_input.is_absolute()
+        else (base_dir / candidate_input).resolve()
+    )
+
+    if candidate_dir == base_dir or base_dir in candidate_dir.parents:
+        return candidate_dir
+
+    logger.warning(
+        "Blocked grounding search data_dir outside HERMES_DATA_DIR",
+        extra={
+            "requested_data_dir": data_dir,
+            "resolved_data_dir": str(candidate_dir),
+            "base_data_dir": str(base_dir),
+        },
+    )
+    raise HTTPException(status_code=400, detail="Invalid data_dir")
 
 
 def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]:
@@ -89,11 +120,12 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 @router.get("/search")
 async def search(
     q: str = Query(..., description="Search query"),
-    data_dir: str = Query("./data", description="Data directory path"),
+    data_dir: str | None = Query(None, description="Data directory path"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
     """
-    return _search_extraction_store(q, Path(data_dir))
+    resolved_data_dir = _resolve_search_dir(data_dir)
+    return _search_extraction_store(q, resolved_data_dir)
