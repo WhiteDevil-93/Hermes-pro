@@ -1,0 +1,15 @@
+# Default owners for everything
+* @WhiteDevil-93
+
+# CI/CD workflows
+.github/ @WhiteDevil-93
+
+# Core server
+server/ @WhiteDevil-93
+
+# Schemas
+schemas/ @WhiteDevil-93
+
+# Docker
+Dockerfile @WhiteDevil-93
+docker-compose.yml @WhiteDevil-93

@@ -24,6 +24,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-audit-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-audit-
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
@@ -67,3 +74,60 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
+        with:
+          upload: true
+
+  trivy:
+    name: Container Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: hermes:scan
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: hermes:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  bandit:
+    name: Python Security Linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Run bandit
+        run: bandit -r server/ -f json -o bandit-results.json --severity-level medium || true
+
+      - name: Upload bandit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-results
+          path: bandit-results.json
+          retention-days: 30
