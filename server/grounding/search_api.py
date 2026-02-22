@@ -71,10 +71,12 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
                                 snippet_parts.append(f"{name}: {val}")
                         snippet = "; ".join(snippet_parts[:5])
 
-                        results.append({
-                            "snippet": snippet[:500],
-                            "uri": run_url or f"hermes://run/{run_dir.name}",
-                        })
+                        results.append(
+                            {
+                                "snippet": snippet[:500],
+                                "uri": run_url or f"hermes://run/{run_dir.name}",
+                            }
+                        )
 
                         if len(results) >= 10:
                             return results

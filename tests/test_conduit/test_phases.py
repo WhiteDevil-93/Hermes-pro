@@ -1,6 +1,5 @@
 """Tests for Conduit phase definitions and transition validation."""
 
-
 from server.conduit.phases import TERMINAL_PHASES, VALID_TRANSITIONS, Phase
 
 
@@ -9,9 +8,18 @@ class TestPhaseDefinitions:
 
     def test_all_phases_exist(self):
         expected = {
-            "INIT", "NAVIGATE", "ASSESS", "OBSTRUCT", "AI_REASON",
-            "EXECUTE_PLAN", "EXTRACT", "VALIDATE", "REPAIR",
-            "PERSIST", "COMPLETE", "FAIL",
+            "INIT",
+            "NAVIGATE",
+            "ASSESS",
+            "OBSTRUCT",
+            "AI_REASON",
+            "EXECUTE_PLAN",
+            "EXTRACT",
+            "VALIDATE",
+            "REPAIR",
+            "PERSIST",
+            "COMPLETE",
+            "FAIL",
         }
         assert {p.value for p in Phase} == expected
 

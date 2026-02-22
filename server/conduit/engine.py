@@ -112,9 +112,7 @@ class Conduit:
         Every phase transition MUST go through this method.
         """
         if to_phase not in VALID_TRANSITIONS.get(self._phase, set()):
-            raise ConduitError(
-                f"Invalid transition: {self._phase.value} -> {to_phase.value}"
-            )
+            raise ConduitError(f"Invalid transition: {self._phase.value} -> {to_phase.value}")
 
         from_phase = self._phase
         self._phase = to_phase
@@ -131,7 +129,7 @@ class Conduit:
         """Exponential backoff with jitter."""
         base = self._config.retry.backoff_base_ms / 1000.0
         max_delay = self._config.retry.backoff_max_ms / 1000.0
-        delay = min(base * (2 ** attempt), max_delay)
+        delay = min(base * (2**attempt), max_delay)
         if self._config.retry.jitter:
             delay += random.uniform(0, base)
         await asyncio.sleep(delay)
@@ -241,8 +239,7 @@ class Conduit:
                 # Stay in NAVIGATE phase (re-enter on next loop iteration)
             else:
                 await self._fail(
-                    f"Navigation failed after {self._attempts}"
-                    f" attempts: {result.detail}"
+                    f"Navigation failed after {self._attempts} attempts: {result.detail}"
                 )
 
     async def _phase_assess(self) -> None:
@@ -270,9 +267,7 @@ class Conduit:
                     "confidence": obstruction.confidence,
                 },
             )
-            await self._fail(
-                f"Hard block detected: {obstruction.obstruction_type.value}"
-            )
+            await self._fail(f"Hard block detected: {obstruction.obstruction_type.value}")
         else:
             # Obstruction detected — try to resolve
             await self._signals.emit(
@@ -433,9 +428,7 @@ class Conduit:
                 )
                 break
 
-            self._interaction_trace.append(
-                f"{action.function}:{action.parameters}"
-            )
+            self._interaction_trace.append(f"{action.function}:{action.parameters}")
 
         self._pending_plan = []
         self._attempts = 0
@@ -647,7 +640,8 @@ class Conduit:
                 "confidence_avg": sum(
                     sum(f.confidence for f in r.fields.values()) / max(len(r.fields), 1)
                     for r in records
-                ) / max(len(records), 1),
+                )
+                / max(len(records), 1),
                 "schema_valid": True,
                 "flagged_fields": flagged,
             },

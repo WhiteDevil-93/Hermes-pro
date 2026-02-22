@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import HermesConfig
+from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
@@ -31,6 +31,7 @@ _websocket_connections: dict[str, list[WebSocket]] = {}
 
 
 # --- Request/Response Models ---
+
 
 class RunRequest(BaseModel):
     """Request to initiate a scrape run."""
@@ -66,6 +67,7 @@ class RunStatus(BaseModel):
 
 # --- Endpoints ---
 
+
 @router.post("/runs", response_model=RunResponse)
 async def create_run(request: RunRequest) -> RunResponse:
     """Initiate a new scrape run.
@@ -79,8 +81,8 @@ async def create_run(request: RunRequest) -> RunResponse:
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
-        browser={"headless": request.headless},
-        pipeline={"debug_mode": request.debug_mode},
+        browser=BrowserConfig(headless=request.headless),
+        pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
 
     conduit = Conduit(config)
@@ -109,6 +111,7 @@ async def create_run(request: RunRequest) -> RunResponse:
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
             _active_runs.pop(run_id, None)
             _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
@@ -217,6 +220,7 @@ async def list_runs() -> dict[str, Any]:
 
 
 # --- WebSocket for real-time Signal streaming ---
+
 
 @router.websocket("/ws/runs/{run_id}")
 async def websocket_signals(websocket: WebSocket, run_id: str) -> None:

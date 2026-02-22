@@ -20,6 +20,7 @@ from server.config.settings import VertexConfig
 
 # --- Function Call Models ---
 
+
 class FunctionCall(BaseModel):
     """A structured function call returned by the AI Engine."""
 
@@ -56,29 +57,35 @@ class ExtractionResult(BaseModel):
 
 # --- Allowed Function Names (Trust Boundary) ---
 
-ALLOWED_NAVIGATION_FUNCTIONS = frozenset({
-    "click",
-    "scroll",
-    "fill_form",
-    "hover",
-    "press_key",
-    "wait_for",
-    "navigate_url",
-})
+ALLOWED_NAVIGATION_FUNCTIONS = frozenset(
+    {
+        "click",
+        "scroll",
+        "fill_form",
+        "hover",
+        "press_key",
+        "wait_for",
+        "navigate_url",
+    }
+)
 
-ALLOWED_ASSESSMENT_FUNCTIONS = frozenset({
-    "classify_page",
-    "classify_obstruction",
-    "identify_content_region",
-    "assess_completeness",
-})
+ALLOWED_ASSESSMENT_FUNCTIONS = frozenset(
+    {
+        "classify_page",
+        "classify_obstruction",
+        "identify_content_region",
+        "assess_completeness",
+    }
+)
 
-ALLOWED_EXTRACTION_FUNCTIONS = frozenset({
-    "extract_structured",
-    "repair_extraction",
-    "deduplicate",
-    "convert_prose_to_fields",
-})
+ALLOWED_EXTRACTION_FUNCTIONS = frozenset(
+    {
+        "extract_structured",
+        "repair_extraction",
+        "deduplicate",
+        "convert_prose_to_fields",
+    }
+)
 
 ALL_ALLOWED_FUNCTIONS = (
     ALLOWED_NAVIGATION_FUNCTIONS | ALLOWED_ASSESSMENT_FUNCTIONS | ALLOWED_EXTRACTION_FUNCTIONS
@@ -178,8 +185,7 @@ NAVIGATION_FUNCTION_DECLARATIONS = [
     {
         "name": "navigate_url",
         "description": (
-            "Navigate to a specific URL"
-            " (must be same-origin unless cross-origin allowed)"
+            "Navigate to a specific URL (must be same-origin unless cross-origin allowed)"
         ),
         "parameters": {
             "type": "object",
@@ -264,7 +270,7 @@ class AIEngine:
 
     def __init__(self, config: VertexConfig) -> None:
         self._config = config
-        self._client = None
+        self._client: Any = None
         self._initialized = False
 
     async def initialize(self) -> bool:
@@ -369,8 +375,8 @@ class AIEngine:
 
             attempts_context = ""
             if prior_attempts:
-                attempts_context = (
-                    "\nPrior failed attempts:\n" + "\n".join(f"- {a}" for a in prior_attempts)
+                attempts_context = "\nPrior failed attempts:\n" + "\n".join(
+                    f"- {a}" for a in prior_attempts
                 )
 
             prompt = (
