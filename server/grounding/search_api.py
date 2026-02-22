@@ -17,9 +17,11 @@ The endpoint conforms to Vertex AI's required interface:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from server.config.settings import PipelineConfig
 

@@ -6,6 +6,10 @@ build-backend = "hatchling.build"
 name = "hermes"
 version = "2.0.0"
 description = "Autonomous Web Intelligence Engine - Deterministic scraping with AI reasoning"
+license = { text = "MIT" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
