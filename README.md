@@ -76,7 +76,7 @@ curl http://localhost:8080/api/v1/runs/{run_id}/signals
 curl http://localhost:8080/api/v1/runs/{run_id}/records
 
 # Real-time via WebSocket
-wscat -c ws://localhost:8080/api/v1/ws/runs/{run_id}
+wscat -c "ws://localhost:8080/api/v1/ws/runs/{run_id}?run_token={run_token}"
 ```
 
 ### List all runs
@@ -98,27 +98,10 @@ curl http://localhost:8080/api/v1/runs
 | `HERMES_PORT` | Server port | `8080` |
 | `HERMES_LOG_LEVEL` | Logging verbosity | `INFO` |
 | `HERMES_MAX_CONCURRENT_RUNS` | Parallel run limit | `1` |
-| `HERMES_ENV` | Runtime environment (`development`, `local`, `dev`, `production`) | `development` |
-| `HERMES_ALLOWED_ORIGINS` | Comma-separated trusted CORS origins (required outside development/local/dev) | (empty) |
-| `HERMES_DEV_ALLOW_ALL_ORIGINS` | Enable permissive `*` CORS only for local development | `false` |
-| `HERMES_CORS_ALLOW_CREDENTIALS` | Enable CORS credentials (ignored when wildcard origin is active) | `false` |
-
-
-### CORS Configuration
-
-Hermes is **deny-by-default** for CORS unless origins are explicitly configured.
-
-- In `production` (or any `HERMES_ENV` value other than `development`, `local`, `dev`), you **must** set `HERMES_ALLOWED_ORIGINS`.
-- If production starts without `HERMES_ALLOWED_ORIGINS`, Hermes exits at startup with a clear configuration error.
-- For local development convenience, set `HERMES_DEV_ALLOW_ALL_ORIGINS=true` to allow `*`. This toggle is ignored outside development/local/dev environments.
-
-Example production configuration:
-
-```bash
-export HERMES_ENV=production
-export HERMES_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
-export HERMES_CORS_ALLOW_CREDENTIALS=true
-```
+| `HERMES_API_TOKEN` | Optional API bearer token/X-API-Key required for all API endpoints when set | (empty) |
+| `HERMES_ALLOWED_ORIGINS` | Comma-separated CORS origins (must be explicit URLs, wildcard disabled) | `http://localhost,http://127.0.0.1` |
+| `HERMES_CORS_ALLOW_CREDENTIALS` | Enables CORS credentials for explicit origins only | `false` |
+| `HERMES_RUN_RETENTION_LIMIT` | In-memory cap for completed run summaries retained by API | `200` |
 
 ### Extraction Modes
 

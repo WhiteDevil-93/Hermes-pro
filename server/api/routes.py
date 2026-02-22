@@ -1,35 +1,43 @@
-"""REST API routes for Hermes.
-
-Provides endpoints for:
-- Initiating scrape runs
-- Monitoring run status
-- Viewing results and signals
-- Managing configuration
-"""
+"""REST API routes for Hermes."""
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
+import secrets
+from datetime import datetime, timezone
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from server.api.validators import validate_target_url
 from server.conduit.engine import Conduit
-from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
+from server.config.settings import APIConfig, BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
 
 _pipeline_config = PipelineConfig()
-_run_repository = RunRepository.from_environment(_pipeline_config.data_dir)
+_api_config = APIConfig()
+
+# In-memory store for active and completed runs
+_active_runs: dict[str, Conduit] = {}
+_run_tasks: dict[str, asyncio.Task] = {}
+_run_results: dict[str, dict[str, Any]] = {}
+_run_tokens: dict[str, str] = {}
+_run_order: list[str] = []
 _websocket_connections: dict[str, list[WebSocket]] = {}
-
-
-# --- Request/Response Models ---
+_run_summary_ledger = _pipeline_config.data_dir / "run_summaries.jsonl"
 
 
 class RunRequest(BaseModel):
@@ -88,6 +96,7 @@ class RunResponse(BaseModel):
     run_id: str
     status: str
     message: str
+    run_token: str
 
 
 class RunStatus(BaseModel):
@@ -102,56 +111,74 @@ class RunStatus(BaseModel):
     signals_count: int = 0
 
 
-def _metadata_path_for_run(run_id: str) -> Path:
-    return _pipeline_config.data_dir / run_id / "metadata.json"
-
-
-def _get_run_owner(run_id: str) -> str | None:
-    owner = _run_owners.get(run_id)
-    if owner:
-        return owner
-
-    metadata_path = _metadata_path_for_run(run_id)
-    if metadata_path.exists():
-        try:
-            metadata = json.loads(metadata_path.read_text())
-            owner = metadata.get("owner_principal")
-            if owner:
-                _run_owners[run_id] = owner
-            return owner
-        except Exception:
-            return None
-
-    return None
-
-
-def _enforce_run_access(run_id: str, principal: str) -> None:
-    owner = _get_run_owner(run_id)
-    if owner is None:
+def _validate_api_token(auth_header: str | None, x_api_key: str | None) -> None:
+    configured_token = _api_config.api_token
+    if not configured_token:
         return
-    if owner != principal:
-        raise HTTPException(status_code=403, detail="Forbidden")
+
+    bearer = ""
+    if auth_header and auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+
+    supplied = bearer or (x_api_key or "")
+    if not secrets.compare_digest(supplied, configured_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
 
 
-# --- Endpoints ---
+def _validate_run_token(run_id: str, run_token: str | None) -> None:
+    expected = _run_tokens.get(run_id)
+    if expected is None:
+        return
+    if not run_token or not secrets.compare_digest(run_token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing run token",
+        )
+
+
+def _append_run_summary(summary: dict[str, Any]) -> None:
+    _run_summary_ledger.parent.mkdir(parents=True, exist_ok=True)
+    with _run_summary_ledger.open("a", encoding="utf-8") as handle:
+        import json
+
+        handle.write(json.dumps(summary) + "\n")
+
+
+def _load_run_summaries() -> dict[str, dict[str, Any]]:
+    if not _run_summary_ledger.exists():
+        return {}
+    import json
+
+    summaries: dict[str, dict[str, Any]] = {}
+    with _run_summary_ledger.open(encoding="utf-8") as handle:
+        for line in handle:
+            payload = line.strip()
+            if not payload:
+                continue
+            entry = json.loads(payload)
+            run_id = entry.get("run_id")
+            if run_id:
+                summaries[run_id] = entry
+    return summaries
+
+
+def _evict_if_needed() -> None:
+    while len(_run_order) > _api_config.run_retention_limit:
+        run_id = _run_order.pop(0)
+        _run_results.pop(run_id, None)
+        _run_tokens.pop(run_id, None)
+
+
+def require_api_access(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> None:
+    _validate_api_token(authorization, x_api_key)
 
 
 @router.post("/runs", response_model=RunResponse)
-async def create_run(
-    request: RunRequest,
-    principal: str = Depends(require_authenticated_principal),
-) -> RunResponse:
-    """Initiate a new scrape run.
-
-    The run executes asynchronously. Use the returned run_id
-    to monitor progress via GET /runs/{run_id} or WebSocket.
-    """
-    if _is_obviously_private_target(request.target_url):
-        raise HTTPException(
-            status_code=400,
-            detail="target_url must be a public http(s) URL and must not target local/private networks",
-        )
-
+async def create_run(request: RunRequest, _: None = Depends(require_api_access)) -> RunResponse:
+    """Initiate a new scrape run."""
     config = HermesConfig(
         target_url=request.target_url,
         extraction_schema=request.extraction_schema,
@@ -165,10 +192,11 @@ async def create_run(
 
     conduit = Conduit(config)
     run_id = conduit.run_id
+    run_token = secrets.token_urlsafe(24)
 
-    _run_repository.register_active(conduit)
+    _active_runs[run_id] = conduit
+    _run_tokens[run_id] = run_token
 
-    # Register WebSocket broadcaster
     async def signal_broadcaster(signal: Signal) -> None:
         if run_id in _websocket_connections:
             data = signal.model_dump_json()
@@ -183,14 +211,17 @@ async def create_run(
 
     conduit.signals.subscribe(signal_broadcaster)
 
-    # Launch run as background task
     async def run_task() -> None:
         try:
             result = await conduit.run()
-            _run_repository.complete_run(run_id, result, request.target_url)
+            result["completed_at"] = datetime.now(timezone.utc).isoformat()
+            _run_results[run_id] = result
+            _run_order.append(run_id)
+            _evict_if_needed()
+            _append_run_summary(result)
         finally:
-            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
-            _run_repository.remove_active(run_id)
+            _active_runs.pop(run_id, None)
+            _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
@@ -200,20 +231,20 @@ async def create_run(
         run_id=run_id,
         status="started",
         message=f"Run initiated for {request.target_url}",
+        run_token=run_token,
     )
 
 
 @router.get("/runs/{run_id}", response_model=RunStatus)
 async def get_run_status(
     run_id: str,
-    principal: str = Depends(require_authenticated_principal),
+    run_token: str | None = Query(default=None),
+    _: None = Depends(require_api_access),
 ) -> RunStatus:
-    """Get the current status of a run."""
-    _enforce_run_access(run_id, principal)
+    _validate_run_token(run_id, run_token)
 
-    # Check active runs
-    conduit = _run_repository.get_active(run_id)
-    if conduit is not None:
+    if run_id in _active_runs:
+        conduit = _active_runs[run_id]
         return RunStatus(
             run_id=run_id,
             phase=conduit.phase.value,
@@ -221,9 +252,13 @@ async def get_run_status(
             signals_count=len(conduit.signals.signals),
         )
 
-    # Check completed runs
-    summary = _run_repository.get_completed(run_id)
-    if summary is not None:
+    if run_id in _run_results:
+        result = _run_results[run_id]
+    else:
+        persisted = _load_run_summaries()
+        result = persisted.get(run_id)
+
+    if result:
         return RunStatus(
             run_id=run_id,
             phase=summary.phase,
@@ -237,18 +272,17 @@ async def get_run_status(
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
 
-
 @router.get("/runs/{run_id}/signals")
 async def get_run_signals(
     run_id: str,
-    principal: str = Depends(require_authenticated_principal),
+    run_token: str | None = Query(default=None),
+    _: None = Depends(require_api_access),
 ) -> list[dict[str, Any]]:
-    """Get all signals for a run."""
-    conduit = _run_repository.get_active(run_id)
-    if conduit is not None:
-        return [s.model_dump() for s in conduit.signals.signals]
+    _validate_run_token(run_id, run_token)
 
-    # Try to load from ledger
+    if run_id in _active_runs:
+        return [s.model_dump() for s in _active_runs[run_id].signals.signals]
+
     from server.signals.emitter import SignalEmitter
 
     data_dir = _pipeline_config.data_dir
@@ -263,10 +297,10 @@ async def get_run_signals(
 @router.get("/runs/{run_id}/records")
 async def get_run_records(
     run_id: str,
-    principal: str = Depends(require_authenticated_principal),
+    run_token: str | None = Query(default=None),
+    _: None = Depends(require_api_access),
 ) -> list[dict[str, Any]]:
-    """Get extracted records for a completed run."""
-    _enforce_run_access(run_id, principal)
+    _validate_run_token(run_id, run_token)
 
     from server.pipeline.manager import PipelineManager
 
@@ -283,42 +317,47 @@ async def get_run_records(
 @router.post("/runs/{run_id}/abort")
 async def abort_run(
     run_id: str,
-    principal: str = Depends(require_authenticated_principal),
+    run_token: str | None = Query(default=None),
+    _: None = Depends(require_api_access),
 ) -> dict[str, str]:
-    """Abort an active run."""
-    if _run_repository.abort_run(run_id):
+    _validate_run_token(run_id, run_token)
+
+    if run_id in _run_tasks:
+        task = _run_tasks[run_id]
+        task.cancel()
+        _active_runs.pop(run_id, None)
         return {"run_id": run_id, "status": "aborted"}
 
     raise HTTPException(status_code=404, detail=f"Active run {run_id} not found")
 
 
 @router.get("/runs")
-async def list_runs() -> dict[str, Any]:
-    """List all active and recent completed runs."""
-    return {
-        "active": _run_repository.list_active(),
-        "completed": _run_repository.list_completed(),
-    }
-
-
-# --- WebSocket for real-time Signal streaming ---
+async def list_runs(_: None = Depends(require_api_access)) -> dict[str, Any]:
+    active = [
+        {"run_id": rid, "phase": conduit.phase.value, "status": "running"}
+        for rid, conduit in _active_runs.items()
+    ]
+    completed = [
+        {"run_id": rid, "status": result.get("status", "unknown"), **result}
+        for rid, result in _run_results.items()
+    ]
+    return {"active": active, "completed": completed}
 
 
 @router.websocket("/ws/runs/{run_id}")
-async def websocket_signals(websocket: WebSocket, run_id: str) -> None:
-    """WebSocket endpoint for real-time signal streaming during active runs.
-
-    Clients connect here to receive signals as they are emitted.
-    """
-    principal = extract_principal_from_headers(websocket)
-    if principal is None:
-        await websocket.close(code=4401, reason=AUTH_REQUIRED_DETAIL)
-        return
-
+async def websocket_signals(
+    websocket: WebSocket,
+    run_id: str,
+    run_token: str | None = Query(default=None),
+    api_token: str | None = Query(default=None),
+) -> None:
     try:
-        _enforce_run_access(run_id, principal)
+        auth_header = websocket.headers.get("authorization")
+        x_api_key = websocket.headers.get("x-api-key")
+        _validate_api_token(auth_header, x_api_key or api_token)
+        _validate_run_token(run_id, run_token)
     except HTTPException:
-        await websocket.close(code=4403, reason="Forbidden")
+        await websocket.close(code=1008)
         return
 
     await websocket.accept()
@@ -328,21 +367,16 @@ async def websocket_signals(websocket: WebSocket, run_id: str) -> None:
     _websocket_connections[run_id].append(websocket)
 
     try:
-        # Send existing signals as initial state
-        conduit = _run_repository.get_active(run_id)
-        if conduit is not None:
-            for signal in conduit.signals.signals:
+        if run_id in _active_runs:
+            for signal in _active_runs[run_id].signals.signals:
                 await websocket.send_text(signal.model_dump_json())
 
-        # Keep connection alive until client disconnects or run completes
         while True:
             try:
-                # Wait for client messages (ping/pong or control)
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
                 if data == "ping":
                     await websocket.send_text("pong")
             except asyncio.TimeoutError:
-                # Send keepalive
                 try:
                     await websocket.send_text('{"type":"keepalive"}')
                 except Exception:

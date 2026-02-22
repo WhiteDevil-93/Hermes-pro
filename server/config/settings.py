@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _csv_env(var_name: str) -> list[str]:
@@ -63,21 +64,48 @@ class PipelineConfig(BaseModel):
     min_confidence_threshold: float = 0.5
 
 
-class TargetURLPolicyConfig(BaseModel):
-    """Network policy for validating user-provided target URLs."""
+class APIConfig(BaseModel):
+    """API/security and runtime controls from environment."""
 
-    allowed_domains: list[str] = Field(
-        default_factory=lambda: _csv_env("HERMES_ALLOWED_TARGET_DOMAINS")
+    api_token: str = Field(default_factory=lambda: os.getenv("HERMES_API_TOKEN", ""))
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: APIConfig.parse_allowed_origins(
+            os.getenv("HERMES_ALLOWED_ORIGINS", "")
+        )
     )
-    denied_domains: list[str] = Field(
-        default_factory=lambda: _csv_env("HERMES_DENIED_TARGET_DOMAINS")
+    cors_allow_credentials: bool = Field(
+        default_factory=lambda: os.getenv("HERMES_CORS_ALLOW_CREDENTIALS", "").lower() == "true"
     )
-    block_private_network_targets: bool = Field(
-        default_factory=lambda: os.getenv(
-            "HERMES_BLOCK_PRIVATE_NETWORK_TARGETS", "true"
-        ).strip().lower()
-        not in {"0", "false", "no"}
+    run_retention_limit: int = Field(
+        default_factory=lambda: int(os.getenv("HERMES_RUN_RETENTION_LIMIT", "200"))
     )
+
+    @staticmethod
+    def parse_allowed_origins(value: str) -> list[str]:
+        if not value.strip():
+            return ["http://localhost", "http://127.0.0.1"]
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError("HERMES_ALLOWED_ORIGINS cannot include '*'")
+        return origins
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def _validate_allowed_origins(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("allowed_origins cannot be empty")
+        for origin in value:
+            parsed = urlparse(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(f"Invalid CORS origin: {origin}")
+        return value
+
+    @field_validator("run_retention_limit")
+    @classmethod
+    def _validate_retention_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("HERMES_RUN_RETENTION_LIMIT must be >= 1")
+        return value
 
 
 class HermesConfig(BaseModel):

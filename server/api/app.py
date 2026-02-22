@@ -2,24 +2,27 @@
 
 from __future__ import annotations
 
-import os
-from typing import Final
-
-from collections.abc import Callable
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from server.api.auth import extract_principal_from_headers
 from server.api.routes import router
+from server.config.settings import APIConfig
 from server.grounding.search_api import router as grounding_router
 
 _DEVELOPMENT_ENVIRONMENTS: Final[set[str]] = {"dev", "development", "local"}
 
+_api_config = APIConfig()
+_allow_credentials = _api_config.cors_allow_credentials and "*" not in _api_config.allowed_origins
 
-def _is_truthy_env(value: str) -> bool:
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_api_config.allowed_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+)
 
 
 def _resolve_cors_origins() -> list[str]:

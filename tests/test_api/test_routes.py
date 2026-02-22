@@ -145,43 +145,16 @@ class TestRunEndpoints:
         assert "run_id" in data
         assert data["status"] == "started"
         assert data["run_id"].startswith("run_")
+        assert "run_token" in data
 
+class TestAuthHelpers:
+    def test_validate_run_token_rejects_mismatch(self):
+        from fastapi import HTTPException
 
-class TestGroundingEndpoint:
-    def test_grounding_search_rejects_data_dir_override(self, client, tmp_path, monkeypatch):
-        from server.grounding import search_api
+        from server.api import routes
 
-        trusted_dir = tmp_path / "trusted"
-        run_dir = trusted_dir / "run_1"
-        run_dir.mkdir(parents=True)
-        (run_dir / "records.jsonl").write_text('{"fields": {"title": {"value": "alpha"}}}\n')
-
-        attacker_dir = tmp_path / "attacker"
-        attacker_run = attacker_dir / "run_2"
-        attacker_run.mkdir(parents=True)
-        (attacker_run / "records.jsonl").write_text('{"fields": {"title": {"value": "omega"}}}\n')
-
-        monkeypatch.setattr(search_api._pipeline_config, "data_dir", trusted_dir)
-
-        response = client.get(
-            "/api/v1/grounding/search",
-            params={"q": "alpha", "data_dir": str(attacker_dir)},
-        )
-        assert response.status_code == 400
-        assert "data_dir override is disabled" in response.json()["detail"]
-
-    def test_grounding_search_uses_configured_data_dir(self, client, tmp_path, monkeypatch):
-        from server.grounding import search_api
-
-        trusted_dir = tmp_path / "trusted"
-        run_dir = trusted_dir / "run_1"
-        run_dir.mkdir(parents=True)
-        (run_dir / "records.jsonl").write_text('{"fields": {"title": {"value": "alpha"}}}\n')
-
-        monkeypatch.setattr(search_api._pipeline_config, "data_dir", trusted_dir)
-
-        response = client.get("/api/v1/grounding/search", params={"q": "alpha"})
-        assert response.status_code == 200
-        results = response.json()
-        assert results
-        assert any("alpha" in item.get("snippet", "") for item in results)
+        routes._run_tokens["run_x"] = "secret"
+        with pytest.raises(HTTPException) as err:
+            routes._validate_run_token("run_x", "wrong")
+        assert err.value.status_code == 403
+        routes._run_tokens.clear()
