@@ -1,0 +1,64 @@
+name: Brand Identity Guard
+
+on:
+  push:
+    branches: [main, master, 'claude/**']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  brand-guard:
+    name: Forbidden Strings Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for forbidden brand strings
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Forbidden strings: legacy names and terms that must not appear
+          # in source code, configs, or user-facing text.
+          # Case-insensitive patterns (regex).
+          FORBIDDEN_PATTERNS=(
+            '\bScraper\b'
+            '\bScraperConsole\b'
+            '\bScraping Console\b'
+            '\bSettings Panel\b'
+            '\bHermes Scraper\b'
+            '\bweb scraper\b'
+          )
+
+          # Files/dirs to exclude from scanning
+          EXCLUDE_ARGS=(
+            --exclude-dir=.git
+            --exclude-dir=node_modules
+            --exclude-dir=__pycache__
+            --exclude-dir=.pytest_cache
+            --exclude-dir=data
+            --exclude='*.lock'
+            --exclude='brand-guard.yml'
+          )
+
+          FOUND=0
+          for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
+            MATCHES=$(grep -r -i -n "${EXCLUDE_ARGS[@]}" -E "$pattern" . 2>/dev/null || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::error::Forbidden brand string matched: $pattern"
+              echo "$MATCHES" | while IFS= read -r line; do
+                echo "  $line"
+              done
+              FOUND=1
+            fi
+          done
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "::error::Brand identity violation detected!"
+            echo "The strings above are forbidden. Use 'Hermes' as the product name."
+            echo "Refer to the brand guidelines for approved terminology."
+            exit 1
+          fi
+
+          echo "Brand identity check passed - no forbidden strings found."

@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  hermes:
+    build: .
+    ports:
+      - "${HERMES_PORT:-8080}:8080"
+    environment:
+      - VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID:-}
+      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      - HERMES_DATA_DIR=/app/data
+      - HERMES_LOG_LEVEL=${HERMES_LOG_LEVEL:-INFO}
+      - HERMES_MAX_CONCURRENT_RUNS=${HERMES_MAX_CONCURRENT_RUNS:-1}
+    volumes:
+      - hermes-data:/app/data
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:${GOOGLE_APPLICATION_CREDENTIALS:-/tmp/empty}:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  hermes-data:

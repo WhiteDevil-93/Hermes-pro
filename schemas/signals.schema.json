@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes.dev/schemas/signals.schema.json",
+  "title": "Hermes Signal",
+  "description": "Schema for observability signals emitted during a Hermes run",
+  "type": "object",
+  "required": ["sequence", "signal_type", "timestamp", "run_id"],
+  "properties": {
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic sequence number within the run"
+    },
+    "signal_type": {
+      "type": "string",
+      "enum": [
+        "PHASE_TRANSITION",
+        "OBSTRUCTION_DETECTED",
+        "AI_INVOKED",
+        "AI_RESPONDED",
+        "AI_REJECTED",
+        "ACTION_EXECUTED",
+        "EXTRACTION_COMPLETE",
+        "RETRY_ATTEMPT",
+        "RUN_COMPLETE",
+        "RUN_FAILED"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Signal-specific payload data"
+    }
+  }
+}
