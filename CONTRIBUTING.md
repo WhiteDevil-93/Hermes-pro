@@ -1,6 +1,6 @@
 # Contributing to Hermes
 
-Thanks for your interest in contributing! This document covers the process for
+Thanks for your interest in contributing. This document covers the process for
 contributing to Hermes.
 
 ## Getting Started
@@ -9,7 +9,6 @@ contributing to Hermes.
 
 - Python 3.11+
 - Docker (for container builds)
-- Node.js (for the web frontend)
 
 ### Development Setup
 
@@ -22,52 +21,66 @@ cd Hermes-pro
 pip install -e '.[dev]'
 
 # Install Playwright browser
-playwright install chromium
+playwright install chromium --with-deps
 
-# Run tests
-pytest
-
-# Run linting
-ruff check .
-ruff format --check .
+# Run the same checks used in CI
+ruff check server/ tests/
+ruff format --check server/ tests/
+mypy server/ --ignore-missing-imports --no-error-summary
+pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
 ```
 
 Or use the **Dev Container** (recommended): open the repo in VS Code and select
 "Reopen in Container".
 
+## Current Architecture and Status
+
+### Implemented
+
+- FastAPI service with run lifecycle APIs and WebSocket signal streaming.
+- Conduit phase engine orchestrating browser navigation, assessment, extraction, and persistence.
+- Playwright-based browser execution layer.
+- Signals/event pipeline and test coverage for API, pipeline, conduit, and signal modules.
+
+### Planned
+
+- Additional hardening for long-running and adversarial scraping sessions.
+- More extraction strategies and richer post-processing.
+- Expanded operational documentation for production deployment and observability.
+
 ## Development Workflow
 
-1. **Fork** the repository
+1. **Fork** the repository.
 2. **Create a branch** from `main`:
    ```bash
    git checkout -b feature/my-change
    ```
-3. **Make your changes** — keep commits focused and atomic
-4. **Run checks locally**:
+3. **Make your changes** and keep commits focused.
+4. **Run checks locally** (same command set as CI):
    ```bash
-   make lint      # ruff check + format
-   make test      # pytest with coverage
-   make typecheck # mypy
+   make lint
+   make typecheck
+   make test-cov
    ```
-5. **Push** your branch and open a **Pull Request**
+5. **Push** your branch and open a **Pull Request**.
 
 ## Pull Request Guidelines
 
-- Fill out the PR template completely
-- Link related issues using `Closes #123`
-- Keep PRs focused — one feature or fix per PR
-- Add tests for new functionality
-- Ensure CI passes before requesting review
-- Rebase on `main` if your branch is behind
+- Fill out the PR template completely.
+- Link related issues using `Closes #123`.
+- Keep PRs focused: one feature or fix per PR.
+- Add tests for new functionality.
+- Ensure CI passes before requesting review.
+- Rebase on `main` if your branch is behind.
 
 ## Code Standards
 
-| Area        | Tool   | Config              |
-|-------------|--------|---------------------|
-| Formatting  | Ruff   | `pyproject.toml`    |
-| Linting     | Ruff   | `pyproject.toml`    |
-| Type checks | mypy   | `pyproject.toml`    |
-| Tests       | pytest | `pyproject.toml`    |
+| Area        | Tool   | Config           |
+|-------------|--------|------------------|
+| Formatting  | Ruff   | `pyproject.toml` |
+| Linting     | Ruff   | `pyproject.toml` |
+| Type checks | mypy   | `pyproject.toml` |
+| Tests       | pytest | `pyproject.toml` |
 
 - **Line length**: 100 characters
 - **Target Python**: 3.11+
