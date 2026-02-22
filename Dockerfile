@@ -26,12 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir . && \
-    playwright install chromium
-
-# Copy application code
 COPY server/ server/
 COPY schemas/ schemas/
+RUN pip install --no-cache-dir . && \
+    playwright install chromium
 
 # Create data directory
 RUN mkdir -p /app/data

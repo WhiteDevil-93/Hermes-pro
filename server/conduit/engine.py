@@ -65,7 +65,8 @@ class Conduit:
         self._config = config
         self._run_id = f"run_{uuid.uuid4().hex[:12]}"
         self._phase = Phase.INIT
-        self._start_time: float | None = None
+        self._start_time: float | None = None  # monotonic, for duration calculation
+        self._start_wall_time: datetime | None = None  # wall-clock, for metadata timestamps
         self._attempts = 0
         self._ai_calls = 0
         self._interaction_trace: list[str] = []
@@ -150,6 +151,7 @@ class Conduit:
         Returns a summary dict with run results.
         """
         self._start_time = time.monotonic()
+        self._start_wall_time = datetime.now(timezone.utc)
 
         try:
             # INIT phase
@@ -715,9 +717,7 @@ class Conduit:
             metadata = RunMetadata(
                 run_id=self._run_id,
                 target_url=self._config.target_url,
-                started_at=datetime.fromtimestamp(
-                    self._start_time or time.time(), tz=timezone.utc
-                ),
+                started_at=self._start_wall_time or datetime.now(timezone.utc),
                 extraction_mode=self._config.extraction_mode,
                 total_signals=len(self._signals.signals),
                 status="complete",
