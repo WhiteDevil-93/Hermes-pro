@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.api.routes import router
+from server.config.settings import APIConfig
 from server.grounding.search_api import router as grounding_router
 
 app = FastAPI(
@@ -16,20 +15,15 @@ app = FastAPI(
     version="2.0.0",
 )
 
-# CORS for WebUI
-_cors_origins_raw = os.getenv("HERMES_ALLOWED_ORIGINS", "")
-_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] or ["*"]
-_cors_credentials = (
-    os.getenv("HERMES_CORS_ALLOW_CREDENTIALS", "").lower() == "true"
-    and "*" not in _cors_origins
-)
+_api_config = APIConfig()
+_allow_credentials = _api_config.cors_allow_credentials and "*" not in _api_config.allowed_origins
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=_cors_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_api_config.allowed_origins,
+    allow_credentials=_allow_credentials,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
 app.include_router(router, prefix="/api/v1")

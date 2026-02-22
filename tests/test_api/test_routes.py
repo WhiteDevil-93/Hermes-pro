@@ -65,3 +65,16 @@ class TestRunEndpoints:
         assert "run_id" in data
         assert data["status"] == "started"
         assert data["run_id"].startswith("run_")
+        assert "run_token" in data
+
+class TestAuthHelpers:
+    def test_validate_run_token_rejects_mismatch(self):
+        from fastapi import HTTPException
+
+        from server.api import routes
+
+        routes._run_tokens["run_x"] = "secret"
+        with pytest.raises(HTTPException) as err:
+            routes._validate_run_token("run_x", "wrong")
+        assert err.value.status_code == 403
+        routes._run_tokens.clear()

@@ -71,7 +71,7 @@ curl http://localhost:8080/api/v1/runs/{run_id}/signals
 curl http://localhost:8080/api/v1/runs/{run_id}/records
 
 # Real-time via WebSocket
-wscat -c ws://localhost:8080/api/v1/ws/runs/{run_id}
+wscat -c "ws://localhost:8080/api/v1/ws/runs/{run_id}?run_token={run_token}"
 ```
 
 ### List all runs
@@ -93,6 +93,10 @@ curl http://localhost:8080/api/v1/runs
 | `HERMES_PORT` | Server port | `8080` |
 | `HERMES_LOG_LEVEL` | Logging verbosity | `INFO` |
 | `HERMES_MAX_CONCURRENT_RUNS` | Parallel run limit | `1` |
+| `HERMES_API_TOKEN` | Optional API bearer token/X-API-Key required for all API endpoints when set | (empty) |
+| `HERMES_ALLOWED_ORIGINS` | Comma-separated CORS origins (must be explicit URLs, wildcard disabled) | `http://localhost,http://127.0.0.1` |
+| `HERMES_CORS_ALLOW_CREDENTIALS` | Enables CORS credentials for explicit origins only | `false` |
+| `HERMES_RUN_RETENTION_LIMIT` | In-memory cap for completed run summaries retained by API | `200` |
 
 ### Extraction Modes
 
