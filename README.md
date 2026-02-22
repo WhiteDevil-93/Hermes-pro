@@ -100,6 +100,20 @@ curl http://localhost:8080/api/v1/runs
 - **ai** — Vertex AI Gemini extracts data from DOM snapshots
 - **hybrid** — Heuristic first, AI fills gaps for ambiguous fields
 
+
+## Temporary Security Posture (API hardening)
+
+The API currently enforces conservative safeguards while deeper SSRF and path hardening work is in progress:
+
+- `POST /api/v1/runs` accepts only `http://` and `https://` targets.
+- `target_url` values that clearly target local/private networks are rejected (for example `localhost`, loopback, and RFC1918/private IP ranges).
+- `GET /api/v1/grounding/search` rejects caller-provided `data_dir`; it reads only from the server-configured `HERMES_DATA_DIR`.
+
+### Known limitations
+
+- URL validation is intentionally minimal and blocks only obvious local/private targets; it does not perform DNS resolution or full SSRF defense.
+- Grounding data access is now restricted to the configured data directory, but file-level authorization and tenancy boundaries are not yet implemented.
+
 ## Project Structure
 
 ```

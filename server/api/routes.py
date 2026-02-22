@@ -10,15 +10,15 @@ Provides endpoints for:
 from __future__ import annotations
 
 import asyncio
-import os
-from pathlib import Path
+import ipaddress
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import HermesConfig, PipelineConfig
+from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
@@ -45,6 +45,44 @@ class RunRequest(BaseModel):
     allow_cross_origin: bool = False
     headless: bool = True
     debug_mode: bool = False
+
+
+def _is_obviously_private_target(target_url: str) -> bool:
+    """Best-effort guard against SSRF to local/private targets.
+
+    This does not resolve DNS; it only validates obvious direct targets.
+    """
+    try:
+        parsed = urlparse(target_url)
+    except Exception:
+        return True
+
+    if parsed.scheme not in {"http", "https"}:
+        return True
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return True
+
+    if hostname in {"localhost", "0", "0.0.0.0", "::", "::1"}:
+        return True
+
+    if hostname.endswith(".local") or hostname.endswith(".internal"):
+        return True
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_unspecified
+        or ip.is_multicast
+        or ip.is_reserved
+    )
 
 
 class RunResponse(BaseModel):
@@ -77,6 +115,12 @@ async def create_run(request: RunRequest) -> RunResponse:
     The run executes asynchronously. Use the returned run_id
     to monitor progress via GET /runs/{run_id} or WebSocket.
     """
+    if _is_obviously_private_target(request.target_url):
+        raise HTTPException(
+            status_code=400,
+            detail="target_url must be a public http(s) URL and must not target local/private networks",
+        )
+
     config = HermesConfig(
         target_url=request.target_url,
         extraction_schema=request.extraction_schema,
@@ -156,10 +200,6 @@ async def get_run_status(run_id: str) -> RunStatus:
 
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
-
-def _get_data_dir() -> Path:
-    """Resolve the data directory from environment or default."""
-    return Path(os.getenv("HERMES_DATA_DIR", "./data"))
 
 
 @router.get("/runs/{run_id}/signals")
