@@ -49,7 +49,9 @@ def _parse_ip(hostname: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | 
 
 
 def _is_blocked_ip(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return bool(address.is_private or address.is_link_local or address.is_loopback)
+    # Block any IP address that is not globally routable. This includes private,
+    # link-local, loopback, unspecified, multicast, and reserved address ranges.
+    return not address.is_global
 
 
 def _domain_matches(hostname: str, domains: list[str]) -> bool:
