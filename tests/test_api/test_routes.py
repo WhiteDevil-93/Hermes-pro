@@ -63,7 +63,6 @@ class TestRunEndpoints:
         response = client.get("/api/v1/runs/nonexistent_run_id/records")
         assert response.status_code == 404
 
-
     def test_create_run_with_minimal_payload(self, client, monkeypatch):
         monkeypatch.setattr(routes, "Conduit", _DummyConduit)
 
