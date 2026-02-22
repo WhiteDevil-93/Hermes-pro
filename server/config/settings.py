@@ -97,4 +97,5 @@ class HermesConfig(BaseModel):
     extraction_mode: Literal["heuristic", "ai", "hybrid"] = "heuristic"
     allow_cross_origin: bool = False
     heuristic_selectors: dict[str, str] = Field(default_factory=dict)
+    owner_principal: str | None = None
     log_level: str = Field(default_factory=lambda: os.getenv("HERMES_LOG_LEVEL", "INFO"))
