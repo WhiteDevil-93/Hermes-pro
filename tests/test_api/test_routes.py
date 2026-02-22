@@ -45,6 +45,21 @@ class TestRunEndpoints:
         response = client.get("/api/v1/runs/nonexistent_run_id/records")
         assert response.status_code == 404
 
+
+    def test_create_run_rejects_non_http_scheme(self, client):
+        response = client.post(
+            "/api/v1/runs",
+            json={"target_url": "file:///etc/passwd", "extraction_mode": "heuristic"},
+        )
+        assert response.status_code == 400
+
+    def test_create_run_rejects_private_network_target(self, client):
+        response = client.post(
+            "/api/v1/runs",
+            json={"target_url": "http://127.0.0.1/admin", "extraction_mode": "heuristic"},
+        )
+        assert response.status_code == 400
+
     @pytest.mark.skipif(
         not __import__("shutil").which("chromium")
         and not __import__("shutil").which("chromium-browser"),
@@ -65,3 +80,30 @@ class TestRunEndpoints:
         assert "run_id" in data
         assert data["status"] == "started"
         assert data["run_id"].startswith("run_")
+
+
+class TestGroundingEndpoint:
+    def test_grounding_search_ignores_data_dir_override(self, client, tmp_path, monkeypatch):
+        from server.grounding import search_api
+
+        trusted_dir = tmp_path / "trusted"
+        run_dir = trusted_dir / "run_1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "records.jsonl").write_text('{"fields": {"title": {"value": "alpha"}}}\n')
+
+        attacker_dir = tmp_path / "attacker"
+        attacker_run = attacker_dir / "run_2"
+        attacker_run.mkdir(parents=True)
+        (attacker_run / "records.jsonl").write_text('{"fields": {"title": {"value": "omega"}}}\n')
+
+        monkeypatch.setattr(search_api._pipeline_config, "data_dir", trusted_dir)
+
+        response = client.get(
+            "/api/v1/grounding/search",
+            params={"q": "alpha", "data_dir": str(attacker_dir)},
+        )
+        assert response.status_code == 200
+        results = response.json()
+        assert results
+        assert any("alpha" in item.get("snippet", "") for item in results)
+        assert all("omega" not in item.get("snippet", "") for item in results)

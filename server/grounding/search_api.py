@@ -21,7 +21,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Query
 
+from server.config.settings import PipelineConfig
+
 router = APIRouter()
+_pipeline_config = PipelineConfig()
 
 
 def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]:
@@ -89,11 +92,10 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 @router.get("/search")
 async def search(
     q: str = Query(..., description="Search query"),
-    data_dir: str = Query("./data", description="Data directory path"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
     """
-    return _search_extraction_store(q, Path(data_dir))
+    return _search_extraction_store(q, Path(_pipeline_config.data_dir))
