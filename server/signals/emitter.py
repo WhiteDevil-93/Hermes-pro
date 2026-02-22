@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+import aiofiles
+
 from server.signals.types import Signal, SignalType
 
 
@@ -87,8 +89,8 @@ class SignalEmitter:
         if self._ledger_path is None:
             return
         line = signal.model_dump_json() + "\n"
-        with open(self._ledger_path, "a") as f:
-            f.write(line)
+        async with aiofiles.open(self._ledger_path, "a") as f:
+            await f.write(line)
 
     async def _broadcast(self, signal: Signal) -> None:
         """Notify all subscribers of a new signal."""
