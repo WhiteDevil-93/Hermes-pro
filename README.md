@@ -139,4 +139,4 @@ Any phase can transition to `FAIL`. Every transition emits a Signal.
 
 ## License
 
-Proprietary — Themyscira Project
+This project is licensed under the [MIT License](LICENSE).
