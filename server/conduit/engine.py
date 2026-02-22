@@ -26,6 +26,7 @@ MUST NOT:
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import time
 import uuid
@@ -47,6 +48,9 @@ from server.pipeline.heuristic import heuristic_extract
 from server.pipeline.manager import PipelineManager, RunMetadata
 from server.signals.emitter import SignalEmitter
 from server.signals.types import SignalType
+from server.telemetry.errors import ErrorCode, emit_structured_error
+
+logger = logging.getLogger(__name__)
 
 
 class ConduitError(Exception):
@@ -474,7 +478,16 @@ class Conduit:
                 return "failure"
 
             return r.status.value
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.CONDUIT_ACTION_EXECUTION_FAILED,
+                message=str(exc),
+                suppressed=True,
+                run_id=self._run_id,
+                phase=self._phase.value,
+                details={"action": function_call.function},
+            )
             return "failure"
 
     async def _phase_extract(self) -> None:
@@ -752,5 +765,12 @@ class Conduit:
         """Clean up all resources."""
         try:
             await self._browser.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.BROWSER_CLEANUP_FAILED,
+                message=str(exc),
+                suppressed=True,
+                run_id=self._run_id,
+                phase=self._phase.value,
+            )

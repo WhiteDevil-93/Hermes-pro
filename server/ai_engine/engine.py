@@ -12,11 +12,15 @@ or modify its own system prompt.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from server.config.settings import VertexConfig
+from server.telemetry.errors import ErrorCode, emit_structured_error
+
+logger = logging.getLogger(__name__)
 
 # --- Function Call Models ---
 
@@ -293,7 +297,13 @@ class AIEngine:
             self._client = GenerativeModel(self._config.flash_model)
             self._initialized = True
             return True
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.AI_INITIALIZATION_FAILED,
+                message=str(exc),
+                suppressed=True,
+            )
             self._initialized = False
             return False
 
@@ -349,7 +359,13 @@ class AIEngine:
 
             data = json.loads(response.text)
             return PageClassification(**data)
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.AI_CLASSIFICATION_FAILED,
+                message=str(exc),
+                suppressed=True,
+            )
             return PageClassification(
                 page_state="CONTENT_VISIBLE",
                 confidence=0.2,
@@ -431,7 +447,13 @@ class AIEngine:
                 estimated_steps=data.get("estimated_steps", len(actions)),
                 confidence=data.get("confidence", 0.5),
             )
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.AI_PLAN_GENERATION_FAILED,
+                message=str(exc),
+                suppressed=True,
+            )
             return NavigationPlan(actions=[], confidence=0.0)
 
     async def extract_structured(
@@ -467,7 +489,13 @@ class AIEngine:
 
             data = json.loads(response.text)
             return ExtractionResult(**data)
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.AI_EXTRACTION_FAILED,
+                message=str(exc),
+                suppressed=True,
+            )
             return ExtractionResult()
 
     async def repair_extraction(
@@ -500,5 +528,11 @@ class AIEngine:
 
             data = json.loads(response.text)
             return ExtractionResult(**data)
-        except Exception:
+        except Exception as exc:
+            emit_structured_error(
+                logger,
+                code=ErrorCode.AI_REPAIR_FAILED,
+                message=str(exc),
+                suppressed=True,
+            )
             return ExtractionResult()
