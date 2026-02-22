@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_search_dir(data_dir: str | None) -> Path:
     """Resolve and validate search directory under configured base data directory."""
-    base_dir = Path(os.getenv("HERMES_DATA_DIR", "./data")).resolve()
+    base_dir = Path(os.getenv("HERMES_DATA_DIR", "./data")).resolve(strict=False)
 
     if not data_dir:
         return base_dir
