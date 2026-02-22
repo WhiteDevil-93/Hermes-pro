@@ -34,12 +34,7 @@ def _resolve_search_dir(data_dir: str | None) -> Path:
     if not data_dir:
         return base_dir
 
-    candidate_input = Path(data_dir)
-    candidate_dir = (
-        candidate_input.resolve()
-        if candidate_input.is_absolute()
-        else (base_dir / candidate_input).resolve()
-    )
+    candidate_dir = (base_dir / data_dir).resolve(strict=False)
 
     if candidate_dir == base_dir or base_dir in candidate_dir.parents:
         return candidate_dir
