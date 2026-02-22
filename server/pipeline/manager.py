@@ -31,6 +31,7 @@ class RunMetadata(BaseModel):
     total_records: int = 0
     total_signals: int = 0
     extraction_mode: str = "heuristic"
+    owner_principal: str | None = None
     status: str = "running"
 
 

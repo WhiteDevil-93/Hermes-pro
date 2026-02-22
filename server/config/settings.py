@@ -10,6 +10,11 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator
 
 
+def _csv_env(var_name: str) -> list[str]:
+    raw = os.getenv(var_name, "")
+    return [item.strip().lower().rstrip(".") for item in raw.split(",") if item.strip()]
+
+
 class VertexConfig(BaseModel):
     """Vertex AI configuration."""
 
@@ -113,10 +118,12 @@ class HermesConfig(BaseModel):
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    target_url_policy: TargetURLPolicyConfig = Field(default_factory=TargetURLPolicyConfig)
     max_concurrent_runs: int = Field(
         default_factory=lambda: int(os.getenv("HERMES_MAX_CONCURRENT_RUNS", "1"))
     )
     extraction_mode: Literal["heuristic", "ai", "hybrid"] = "heuristic"
     allow_cross_origin: bool = False
     heuristic_selectors: dict[str, str] = Field(default_factory=dict)
+    owner_principal: str | None = None
     log_level: str = Field(default_factory=lambda: os.getenv("HERMES_LOG_LEVEL", "INFO"))

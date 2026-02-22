@@ -6,6 +6,7 @@ import asyncio
 import secrets
 from datetime import datetime, timezone
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -19,6 +20,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
+from server.api.validators import validate_target_url
 from server.conduit.engine import Conduit
 from server.config.settings import APIConfig, BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
@@ -48,6 +50,44 @@ class RunRequest(BaseModel):
     allow_cross_origin: bool = False
     headless: bool = True
     debug_mode: bool = False
+
+
+def _is_obviously_private_target(target_url: str) -> bool:
+    """Best-effort guard against SSRF to local/private targets.
+
+    This does not resolve DNS; it only validates obvious direct targets.
+    """
+    try:
+        parsed = urlparse(target_url)
+    except Exception:
+        return True
+
+    if parsed.scheme not in {"http", "https"}:
+        return True
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return True
+
+    if hostname in {"localhost", "0", "0.0.0.0", "::", "::1"}:
+        return True
+
+    if hostname.endswith(".local") or hostname.endswith(".internal"):
+        return True
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_unspecified
+        or ip.is_multicast
+        or ip.is_reserved
+    )
 
 
 class RunResponse(BaseModel):
@@ -145,6 +185,7 @@ async def create_run(request: RunRequest, _: None = Depends(require_api_access))
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
+        owner_principal=principal,
         browser=BrowserConfig(headless=request.headless),
         pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
@@ -184,7 +225,7 @@ async def create_run(request: RunRequest, _: None = Depends(require_api_access))
             _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
-    _run_tasks[run_id] = task
+    _run_repository.set_task(run_id, task)
 
     return RunResponse(
         run_id=run_id,
@@ -220,12 +261,12 @@ async def get_run_status(
     if result:
         return RunStatus(
             run_id=run_id,
-            phase=result.get("phase", "UNKNOWN"),
-            status=result.get("status", "unknown"),
-            records_count=result.get("records_count", 0),
-            duration_s=result.get("duration_s", 0),
-            ai_calls=result.get("ai_calls", 0),
-            signals_count=result.get("signals_count", 0),
+            phase=summary.phase,
+            status=summary.status,
+            records_count=summary.records_count,
+            duration_s=summary.duration_s,
+            ai_calls=summary.ai_calls,
+            signals_count=summary.signals_count,
         )
 
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")

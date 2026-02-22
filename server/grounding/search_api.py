@@ -17,11 +17,16 @@ The endpoint conforms to Vertex AI's required interface:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from server.config.settings import PipelineConfig
 
 router = APIRouter()
+_pipeline_config = PipelineConfig()
 
 
 def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]:
@@ -88,12 +93,20 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 
 @router.get("/search")
 async def search(
+    request: Request,
     q: str = Query(..., description="Search query"),
-    data_dir: str = Query("./data", description="Data directory path"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
+
+    Note: caller-controlled `data_dir` overrides are blocked.
     """
-    return _search_extraction_store(q, Path(data_dir))
+    if "data_dir" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail="data_dir override is disabled; configure HERMES_DATA_DIR on the server",
+        )
+
+    return _search_extraction_store(q, Path(_pipeline_config.data_dir))

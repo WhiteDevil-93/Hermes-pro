@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev lint format typecheck test test-cov docker-build docker-up docker-down clean
+.PHONY: help install dev lint format typecheck docs-check test test-cov docker-build docker-up docker-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -8,31 +8,35 @@ help: ## Show this help
 # ── Setup ────────────────────────────────────────────────────────────
 install: ## Install production dependencies
 	pip install -e .
-	playwright install chromium
+	playwright install chromium --with-deps
 
 dev: ## Install with dev dependencies + pre-commit hooks
 	pip install -e '.[dev]'
-	playwright install chromium
+	playwright install chromium --with-deps
 	pre-commit install
 
 # ── Code Quality ─────────────────────────────────────────────────────
-lint: ## Run linter (ruff check + format check)
-	ruff check .
-	ruff format --check .
+lint: ## Run linter and format check (matches CI)
+	ruff check server/ tests/
+	ruff format --check server/ tests/
 
 format: ## Auto-format code
-	ruff check --fix .
-	ruff format .
+	ruff check --fix server/ tests/
+	ruff format server/ tests/
 
-typecheck: ## Run type checker (mypy)
-	mypy server/
+typecheck: ## Run type checker (matches CI)
+	mypy server/ --ignore-missing-imports --no-error-summary
+
+# ── Documentation Checks ─────────────────────────────────────────────
+docs-check: ## Validate documentation metadata consistency
+	python scripts/check_license_consistency.py
 
 # ── Testing ──────────────────────────────────────────────────────────
-test: ## Run tests
-	pytest
+test: ## Run tests (matches CI options minus coverage upload)
+	pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
 
-test-cov: ## Run tests with coverage report
-	pytest --cov=server --cov-report=term-missing --cov-report=html
+test-cov: ## Run tests with coverage report (matches CI)
+	pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
 
 # ── Docker ───────────────────────────────────────────────────────────
 docker-build: ## Build Docker image
@@ -46,6 +50,6 @@ docker-down: ## Stop Docker Compose services
 
 # ── Cleanup ──────────────────────────────────────────────────────────
 clean: ## Remove build artifacts and caches
-	rm -rf .ruff_cache .pytest_cache .mypy_cache htmlcov .coverage
+	rm -rf .ruff_cache .pytest_cache .mypy_cache htmlcov .coverage coverage.xml
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
