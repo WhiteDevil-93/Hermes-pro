@@ -28,18 +28,23 @@ uvicorn server.api.app:app --host 0.0.0.0 --port 8080
 
 Click **Code > Codespaces > New codespace** on the repo page. The devcontainer auto-installs all dependencies and Playwright. The server port 8080 is forwarded automatically.
 
-## Architecture
+## Architecture and Project Status
 
-Hermes consists of four layers:
+### Implemented today
 
-| Layer | Name | Role |
-|-------|------|------|
-| A | **Conduit** | Execution engine, lifecycle controller, finite state machine |
-| B | **AI Engine** | Reasoning sidecar via Vertex AI Gemini (advisory only) |
-| C | **Browser Layer** | Headless browser automation (Playwright) |
-| D | **Signals** | Observability, phase tracking, audit trail |
+- **Conduit state machine** with explicit phases, transitions, and failure handling.
+- **FastAPI API surface** for run creation, run state, records, and signal streams.
+- **Playwright browser layer** for deterministic page interaction and obstruction handling.
+- **Signals pipeline** for observability and auditability of run execution.
+- **Extraction pipeline** with heuristic and AI-assisted modes.
+- **CI coverage** for lint, typecheck, tests (multi-Python), schema validation, and Docker smoke tests.
 
-**Core principle:** The Conduit owns execution. The AI Engine advises. Every state transition is observable. Every decision is traceable. Every failure is recoverable.
+### Planned / in progress
+
+- Hardening of long-running orchestration and retry policies for hostile sites.
+- Broader extraction strategies and schema-aware post-processing.
+- Expanded grounding/search integrations.
+- Production deployment docs and operations playbooks.
 
 ## API
 
@@ -93,6 +98,27 @@ curl http://localhost:8080/api/v1/runs
 | `HERMES_PORT` | Server port | `8080` |
 | `HERMES_LOG_LEVEL` | Logging verbosity | `INFO` |
 | `HERMES_MAX_CONCURRENT_RUNS` | Parallel run limit | `1` |
+| `HERMES_ENV` | Runtime environment (`development`, `local`, `dev`, `production`) | `development` |
+| `HERMES_ALLOWED_ORIGINS` | Comma-separated trusted CORS origins (required outside development/local/dev) | (empty) |
+| `HERMES_DEV_ALLOW_ALL_ORIGINS` | Enable permissive `*` CORS only for local development | `false` |
+| `HERMES_CORS_ALLOW_CREDENTIALS` | Enable CORS credentials (ignored when wildcard origin is active) | `false` |
+
+
+### CORS Configuration
+
+Hermes is **deny-by-default** for CORS unless origins are explicitly configured.
+
+- In `production` (or any `HERMES_ENV` value other than `development`, `local`, `dev`), you **must** set `HERMES_ALLOWED_ORIGINS`.
+- If production starts without `HERMES_ALLOWED_ORIGINS`, Hermes exits at startup with a clear configuration error.
+- For local development convenience, set `HERMES_DEV_ALLOW_ALL_ORIGINS=true` to allow `*`. This toggle is ignored outside development/local/dev environments.
+
+Example production configuration:
+
+```bash
+export HERMES_ENV=production
+export HERMES_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+export HERMES_CORS_ALLOW_CREDENTIALS=true
+```
 
 ### Extraction Modes
 
@@ -130,11 +156,14 @@ schemas/        # JSON Schemas
 tests/          # Test suite
 ```
 
-## Testing
+## Testing (matches CI)
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
+pip install -e '.[dev]'
+ruff check server/ tests/
+ruff format --check server/ tests/
+mypy server/ --ignore-missing-imports --no-error-summary
+pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
 ```
 
 ## Conduit Phases
@@ -153,4 +182,4 @@ Any phase can transition to `FAIL`. Every transition emits a Signal.
 
 ## License
 
-Proprietary — Themyscira Project
+This project is licensed under the [MIT License](LICENSE).
