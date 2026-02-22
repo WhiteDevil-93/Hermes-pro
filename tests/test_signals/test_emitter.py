@@ -1,6 +1,5 @@
 """Tests for the Signal emitter system."""
 
-
 import pytest
 
 from server.signals.emitter import SignalEmitter

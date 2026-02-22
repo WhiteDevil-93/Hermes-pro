@@ -69,8 +69,26 @@ CONTENT_REVEAL_SELECTORS = [
     '[class*="expand"]',
     'button[class*="accordion"]',
     '[data-toggle="collapse"]',
-    'details > summary',
+    "details > summary",
 ]
+
+
+def _selector_to_html_pattern(selector: str) -> str:
+    """Normalize a CSS selector to a substring that can be found in raw HTML.
+
+    Handles:
+    - #id            -> id="id"
+    - .class          -> class="class" (partial, for substring matching)
+    - [attr*="val"]  -> val
+    - other selectors -> strip brackets and split on *=
+    """
+    s = selector.lower().strip()
+    if s.startswith("#"):
+        return f'id="{s[1:]}"'
+    if s.startswith("."):
+        return s[1:]  # class name will appear as-is inside class="..."
+    # Attribute selector: strip [] and extract value after *=
+    return s.strip("[]").split("*=")[-1].strip('"').strip("'")
 
 
 def detect_obstruction(html: str) -> ObstructionResult:
@@ -83,7 +101,7 @@ def detect_obstruction(html: str) -> ObstructionResult:
 
     # Check for hard blocks first (highest priority)
     for indicator in HARD_BLOCK_INDICATORS:
-        clean_indicator = indicator.lower().strip("[]").split("*=")[-1].strip('"').strip("'")
+        clean_indicator = _selector_to_html_pattern(indicator)
         if clean_indicator in html_lower:
             return ObstructionResult(
                 obstruction_type=ObstructionType.HARD_BLOCK,
@@ -94,7 +112,7 @@ def detect_obstruction(html: str) -> ObstructionResult:
     # Check for consent gates
     for selector in CONSENT_SELECTORS:
         # Simple substring matching on known patterns
-        clean_selector = selector.lower().strip("[]").split("*=")[-1].strip('"').strip("'")
+        clean_selector = _selector_to_html_pattern(selector)
         if clean_selector in html_lower:
             return ObstructionResult(
                 obstruction_type=ObstructionType.CONSENT_GATE,
@@ -105,7 +123,7 @@ def detect_obstruction(html: str) -> ObstructionResult:
 
     # Check for content reveal patterns
     for selector in CONTENT_REVEAL_SELECTORS:
-        clean_selector = selector.lower().strip("[]").split("*=")[-1].strip('"').strip("'")
+        clean_selector = _selector_to_html_pattern(selector)
         if clean_selector in html_lower:
             return ObstructionResult(
                 obstruction_type=ObstructionType.CONTENT_REVEAL,

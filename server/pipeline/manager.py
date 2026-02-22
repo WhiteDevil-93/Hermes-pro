@@ -146,8 +146,8 @@ class PipelineManager:
             with open(temp_path, "w") as f:
                 for record in self._processed_records:
                     f.write(record.model_dump_json() + "\n")
-            # Atomic rename
-            temp_path.rename(self._output_path)
+            # Atomic replace (overwrites existing on POSIX)
+            temp_path.replace(self._output_path)
         except Exception:
             # Clean up temp file on failure
             if temp_path.exists():

@@ -10,7 +10,9 @@ Provides endpoints for:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import os
+from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -32,12 +34,13 @@ _websocket_connections: dict[str, list[WebSocket]] = {}
 
 # --- Request/Response Models ---
 
+
 class RunRequest(BaseModel):
     """Request to initiate a scrape run."""
 
     target_url: str
     extraction_schema: dict[str, Any] = Field(default_factory=dict)
-    extraction_mode: str = "heuristic"
+    extraction_mode: Literal["heuristic", "ai", "hybrid"] = "heuristic"
     heuristic_selectors: dict[str, str] = Field(default_factory=dict)
     allow_cross_origin: bool = False
     headless: bool = True
@@ -66,6 +69,7 @@ class RunStatus(BaseModel):
 
 # --- Endpoints ---
 
+
 @router.post("/runs", response_model=RunResponse)
 async def create_run(request: RunRequest) -> RunResponse:
     """Initiate a new scrape run.
@@ -79,8 +83,8 @@ async def create_run(request: RunRequest) -> RunResponse:
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
-        browser={"headless": request.headless},
-        pipeline={"debug_mode": request.debug_mode},
+        browser=BrowserConfig(headless=request.headless),
+        pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
 
     conduit = Conduit(config)
@@ -109,7 +113,10 @@ async def create_run(request: RunRequest) -> RunResponse:
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
             _active_runs.pop(run_id, None)
+            _run_tasks.pop(run_id, None)
+            _websocket_connections.pop(run_id, None)
 
     task = asyncio.create_task(run_task())
     _run_tasks[run_id] = task
@@ -148,6 +155,11 @@ async def get_run_status(run_id: str) -> RunStatus:
         )
 
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+
+def _get_data_dir() -> Path:
+    """Resolve the data directory from environment or default."""
+    return Path(os.getenv("HERMES_DATA_DIR", "./data"))
 
 
 @router.get("/runs/{run_id}/signals")
@@ -210,6 +222,7 @@ async def list_runs() -> dict[str, Any]:
 
 
 # --- WebSocket for real-time Signal streaming ---
+
 
 @router.websocket("/ws/runs/{run_id}")
 async def websocket_signals(websocket: WebSocket, run_id: str) -> None:

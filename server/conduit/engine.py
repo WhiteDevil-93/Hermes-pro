@@ -65,7 +65,8 @@ class Conduit:
         self._config = config
         self._run_id = f"run_{uuid.uuid4().hex[:12]}"
         self._phase = Phase.INIT
-        self._start_time: float | None = None
+        self._start_time: float | None = None  # monotonic, for duration calculation
+        self._start_wall_time: datetime | None = None  # wall-clock, for metadata timestamps
         self._attempts = 0
         self._ai_calls = 0
         self._interaction_trace: list[str] = []
@@ -111,9 +112,7 @@ class Conduit:
         Every phase transition MUST go through this method.
         """
         if to_phase not in VALID_TRANSITIONS.get(self._phase, set()):
-            raise ConduitError(
-                f"Invalid transition: {self._phase.value} -> {to_phase.value}"
-            )
+            raise ConduitError(f"Invalid transition: {self._phase.value} -> {to_phase.value}")
 
         from_phase = self._phase
         self._phase = to_phase
@@ -130,7 +129,7 @@ class Conduit:
         """Exponential backoff with jitter."""
         base = self._config.retry.backoff_base_ms / 1000.0
         max_delay = self._config.retry.backoff_max_ms / 1000.0
-        delay = min(base * (2 ** attempt), max_delay)
+        delay = min(base * (2**attempt), max_delay)
         if self._config.retry.jitter:
             delay += random.uniform(0, base)
         await asyncio.sleep(delay)
@@ -150,6 +149,7 @@ class Conduit:
         Returns a summary dict with run results.
         """
         self._start_time = time.monotonic()
+        self._start_wall_time = datetime.now(timezone.utc)
 
         try:
             # INIT phase
@@ -239,8 +239,7 @@ class Conduit:
                 # Stay in NAVIGATE phase (re-enter on next loop iteration)
             else:
                 await self._fail(
-                    f"Navigation failed after {self._attempts}"
-                    f" attempts: {result.detail}"
+                    f"Navigation failed after {self._attempts} attempts: {result.detail}"
                 )
 
     async def _phase_assess(self) -> None:
@@ -268,9 +267,7 @@ class Conduit:
                     "confidence": obstruction.confidence,
                 },
             )
-            await self._fail(
-                f"Hard block detected: {obstruction.obstruction_type.value}"
-            )
+            await self._fail(f"Hard block detected: {obstruction.obstruction_type.value}")
         else:
             # Obstruction detected — try to resolve
             await self._signals.emit(
@@ -431,9 +428,7 @@ class Conduit:
                 )
                 break
 
-            self._interaction_trace.append(
-                f"{action.function}:{action.parameters}"
-            )
+            self._interaction_trace.append(f"{action.function}:{action.parameters}")
 
         self._pending_plan = []
         self._attempts = 0
@@ -645,7 +640,8 @@ class Conduit:
                 "confidence_avg": sum(
                     sum(f.confidence for f in r.fields.values()) / max(len(r.fields), 1)
                     for r in records
-                ) / max(len(records), 1),
+                )
+                / max(len(records), 1),
                 "schema_valid": True,
                 "flagged_fields": flagged,
             },
@@ -715,9 +711,7 @@ class Conduit:
             metadata = RunMetadata(
                 run_id=self._run_id,
                 target_url=self._config.target_url,
-                started_at=datetime.fromtimestamp(
-                    self._start_time or time.time(), tz=timezone.utc
-                ),
+                started_at=self._start_wall_time or datetime.now(timezone.utc),
                 extraction_mode=self._config.extraction_mode,
                 total_signals=len(self._signals.signals),
                 status="complete",
