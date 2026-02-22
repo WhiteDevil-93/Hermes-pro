@@ -34,6 +34,23 @@ def client():
     return TestClient(app)
 
 
+class _DummySignals:
+    def __init__(self):
+        self.signals = []
+
+    def subscribe(self, _callback):
+        return None
+
+
+class _DummyConduit:
+    def __init__(self, _config):
+        self.run_id = "run_test123"
+        self.signals = _DummySignals()
+
+    async def run(self):
+        return {"status": "complete", "phase": "COMPLETE"}
+
+
 class TestHealthEndpoint:
     def test_health_check(self, client):
         response = client.get("/health")
@@ -179,3 +196,34 @@ class TestRunEndpoints:
         assert "run_id" in data
         assert data["status"] == "started"
         assert data["run_id"].startswith("run_")
+
+
+class TestGroundingSearchEndpoint:
+    def test_rejects_parent_traversal_data_dir(self, client, tmp_path, monkeypatch, caplog):
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        monkeypatch.setenv("HERMES_DATA_DIR", str(base_dir))
+
+        with caplog.at_level("WARNING"):
+            response = client.get("/api/v1/grounding/search", params={"q": "sample", "data_dir": "../"})
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid data_dir"
+        assert "Blocked grounding search data_dir outside HERMES_DATA_DIR" in caplog.text
+
+    def test_rejects_absolute_outside_base_data_dir(self, client, tmp_path, monkeypatch, caplog):
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        monkeypatch.setenv("HERMES_DATA_DIR", str(base_dir))
+
+        with caplog.at_level("WARNING"):
+            response = client.get(
+                "/api/v1/grounding/search",
+                params={"q": "sample", "data_dir": str(outside_dir.resolve())},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid data_dir"
+        assert "Blocked grounding search data_dir outside HERMES_DATA_DIR" in caplog.text
