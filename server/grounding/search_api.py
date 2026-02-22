@@ -23,36 +23,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
+from server.config.settings import PipelineConfig
+
 router = APIRouter()
-logger = logging.getLogger(__name__)
-
-
-def _resolve_search_dir(data_dir: str | None) -> Path:
-    """Resolve and validate search directory under configured base data directory."""
-    base_dir = Path(os.getenv("HERMES_DATA_DIR", "./data")).resolve()
-
-    if not data_dir:
-        return base_dir
-
-    candidate_input = Path(data_dir)
-    candidate_dir = (
-        candidate_input.resolve()
-        if candidate_input.is_absolute()
-        else (base_dir / candidate_input).resolve()
-    )
-
-    if base_dir in candidate_dir.parents:
-        return candidate_dir
-
-    logger.warning(
-        "Blocked grounding search data_dir outside HERMES_DATA_DIR",
-        extra={
-            "requested_data_dir": data_dir,
-            "resolved_data_dir": str(candidate_dir),
-            "base_data_dir": str(base_dir),
-        },
-    )
-    raise HTTPException(status_code=400, detail="Invalid data_dir")
+_pipeline_config = PipelineConfig()
 
 
 def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]:
@@ -120,12 +94,10 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 @router.get("/search")
 async def search(
     q: str = Query(..., description="Search query"),
-    data_dir: str | None = Query(None, description="Data directory path"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
     """
-    resolved_data_dir = _resolve_search_dir(data_dir)
-    return _search_extraction_store(q, resolved_data_dir)
+    return _search_extraction_store(q, Path(_pipeline_config.data_dir))

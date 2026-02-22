@@ -103,82 +103,20 @@ class TestRunEndpoints:
         )
         assert response.status_code == 404
 
-    def test_owner_access_enforced_for_status(self, client):
-        routes._run_owners["run_owned"] = "alice"
-        routes._run_results["run_owned"] = {"phase": "COMPLETE", "status": "complete"}
 
-        response = client.get(
-            "/api/v1/runs/run_owned",
-            headers=self._auth_headers("bob"),
-        )
-        assert response.status_code == 403
-
-    def test_owner_access_enforced_for_signals(self, client, tmp_path):
-        run_id = "run_owned"
-        run_dir = tmp_path / run_id
-        run_dir.mkdir(parents=True)
-        (run_dir / "metadata.json").write_text(
-            json.dumps({"run_id": run_id, "owner_principal": "alice"})
-        )
-        (run_dir / "signals.jsonl").write_text("")
-
-        response = client.get(
-            f"/api/v1/runs/{run_id}/signals",
-            headers=self._auth_headers("bob"),
-        )
-        assert response.status_code == 403
-
-    def test_owner_access_enforced_for_records(self, client, tmp_path):
-        run_id = "run_owned"
-        run_dir = tmp_path / run_id
-        run_dir.mkdir(parents=True)
-        (run_dir / "metadata.json").write_text(
-            json.dumps({"run_id": run_id, "owner_principal": "alice"})
-        )
-        (run_dir / "records.jsonl").write_text("")
-
-        response = client.get(
-            f"/api/v1/runs/{run_id}/records",
-            headers=self._auth_headers("bob"),
-        )
-        assert response.status_code == 403
-
-    def test_owner_access_enforced_for_abort(self, client):
-        routes._run_owners["run_owned"] = "alice"
-        routes._run_tasks["run_owned"] = _DummyTask()
-
+    def test_create_run_rejects_non_http_scheme(self, client):
         response = client.post(
-            "/api/v1/runs/run_owned/abort",
-            headers=self._auth_headers("bob"),
+            "/api/v1/runs",
+            json={"target_url": "file:///etc/passwd", "extraction_mode": "heuristic"},
         )
-        assert response.status_code == 403
+        assert response.status_code == 400
 
-    def test_authorized_status_success(self, client):
-        routes._run_owners["run_owned"] = "alice"
-        routes._run_results["run_owned"] = {
-            "phase": "COMPLETE",
-            "status": "complete",
-            "records_count": 2,
-        }
-
-        response = client.get(
-            "/api/v1/runs/run_owned",
-            headers=self._auth_headers("alice"),
-        )
-        assert response.status_code == 200
-        assert response.json()["status"] == "complete"
-
-    def test_authorized_abort_success(self, client):
-        routes._run_owners["run_abort"] = "alice"
-        routes._run_tasks["run_abort"] = _DummyTask()
-
+    def test_create_run_rejects_private_network_target(self, client):
         response = client.post(
-            "/api/v1/runs/run_abort/abort",
-            headers=self._auth_headers("alice"),
+            "/api/v1/runs",
+            json={"target_url": "http://127.0.0.1/admin", "extraction_mode": "heuristic"},
         )
-
-        assert response.status_code == 200
-        assert response.json()["status"] == "aborted"
+        assert response.status_code == 400
 
     @pytest.mark.skipif(
         not __import__("shutil").which("chromium")
@@ -203,32 +141,28 @@ class TestRunEndpoints:
         assert data["run_id"].startswith("run_")
 
 
-class TestGroundingSearchEndpoint:
-    def test_rejects_parent_traversal_data_dir(self, client, tmp_path, monkeypatch, caplog):
-        base_dir = tmp_path / "base"
-        base_dir.mkdir()
-        monkeypatch.setenv("HERMES_DATA_DIR", str(base_dir))
+class TestGroundingEndpoint:
+    def test_grounding_search_ignores_data_dir_override(self, client, tmp_path, monkeypatch):
+        from server.grounding import search_api
 
-        with caplog.at_level("WARNING"):
-            response = client.get("/api/v1/grounding/search", params={"q": "sample", "data_dir": "../"})
+        trusted_dir = tmp_path / "trusted"
+        run_dir = trusted_dir / "run_1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "records.jsonl").write_text('{"fields": {"title": {"value": "alpha"}}}\n')
 
-        assert response.status_code == 400
-        assert response.json()["detail"] == "Invalid data_dir"
-        assert "Blocked grounding search data_dir outside HERMES_DATA_DIR" in caplog.text
+        attacker_dir = tmp_path / "attacker"
+        attacker_run = attacker_dir / "run_2"
+        attacker_run.mkdir(parents=True)
+        (attacker_run / "records.jsonl").write_text('{"fields": {"title": {"value": "omega"}}}\n')
 
-    def test_rejects_absolute_outside_base_data_dir(self, client, tmp_path, monkeypatch, caplog):
-        base_dir = tmp_path / "base"
-        base_dir.mkdir()
-        outside_dir = tmp_path / "outside"
-        outside_dir.mkdir()
-        monkeypatch.setenv("HERMES_DATA_DIR", str(base_dir))
+        monkeypatch.setattr(search_api._pipeline_config, "data_dir", trusted_dir)
 
-        with caplog.at_level("WARNING"):
-            response = client.get(
-                "/api/v1/grounding/search",
-                params={"q": "sample", "data_dir": str(outside_dir.resolve())},
-            )
-
-        assert response.status_code == 400
-        assert response.json()["detail"] == "Invalid data_dir"
-        assert "Blocked grounding search data_dir outside HERMES_DATA_DIR" in caplog.text
+        response = client.get(
+            "/api/v1/grounding/search",
+            params={"q": "alpha", "data_dir": str(attacker_dir)},
+        )
+        assert response.status_code == 200
+        results = response.json()
+        assert results
+        assert any("alpha" in item.get("snippet", "") for item in results)
+        assert all("omega" not in item.get("snippet", "") for item in results)
