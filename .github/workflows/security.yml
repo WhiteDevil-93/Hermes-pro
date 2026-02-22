@@ -121,13 +121,77 @@ jobs:
       - name: Install bandit
         run: pip install bandit
 
-      - name: Run bandit
-        run: bandit -r server/ -f json -o bandit-results.json --severity-level medium || true
+      - name: Run bandit gating scan (new HIGH findings)
+        run: |
+          bandit \
+            -r server/ \
+            --severity-level high \
+            --confidence-level high \
+            --baseline .github/security/bandit-baseline.json \
+            -f json \
+            -o bandit-gating-results.json
+
+      - name: Run bandit inventory scan for reporting
+        if: always()
+        run: |
+          bandit \
+            -r server/ \
+            --confidence-level low \
+            -f json \
+            -o bandit-results.json \
+            --exit-zero
+
+      - name: Publish bandit workflow summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          results_path = Path("bandit-results.json")
+          if not results_path.exists():
+              Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+                  "## Bandit summary\n\nNo results file was generated.\n"
+              )
+              raise SystemExit(0)
+
+          data = json.loads(results_path.read_text())
+          counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNDEFINED": 0}
+
+          for finding in data.get("results", []):
+              sev = str(finding.get("issue_severity", "UNDEFINED")).upper()
+              counts[sev] = counts.get(sev, 0) + 1
+
+          run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+          summary = [
+              "## Bandit summary",
+              "",
+              "| Severity | Count |",
+              "| --- | ---: |",
+              f"| HIGH | {counts.get('HIGH', 0)} |",
+              f"| MEDIUM | {counts.get('MEDIUM', 0)} |",
+              f"| LOW | {counts.get('LOW', 0)} |",
+              f"| UNDEFINED | {counts.get('UNDEFINED', 0)} |",
+              "",
+              "Gate policy: fail on HIGH severity + HIGH confidence findings not present in baseline.",
+              "",
+              f"Artifacts: [bandit-results]({run_url}) and [bandit-gating-results]({run_url}).",
+          ]
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+              fh.write("\n".join(summary) + "\n")
+          PY
 
       - name: Upload bandit results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bandit-results
-          path: bandit-results.json
+          path: |
+            bandit-results.json
+            bandit-gating-results.json
+            .github/security/bandit-baseline.json
+            .github/security/bandit-burndown-plan.md
           retention-days: 30
