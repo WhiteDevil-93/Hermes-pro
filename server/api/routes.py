@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import HermesConfig, PipelineConfig
+from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
