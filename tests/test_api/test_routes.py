@@ -5,11 +5,9 @@ from fastapi.testclient import TestClient
 
 from server.api.app import app
 
-
 @pytest.fixture
 def client():
     return TestClient(app)
-
 
 class TestHealthEndpoint:
     def test_health_check(self, client):
@@ -20,6 +18,48 @@ class TestHealthEndpoint:
         assert data["service"] == "hermes"
         assert data["version"] == "2.0.0"
 
+class TestCorsConfiguration:
+    def test_dev_allows_wildcard_only_with_explicit_toggle(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "development")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.setenv("HERMES_DEV_ALLOW_ALL_ORIGINS", "true")
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == ["*"]
+
+    def test_dev_defaults_to_no_origins_without_toggle(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "development")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.delenv("HERMES_DEV_ALLOW_ALL_ORIGINS", raising=False)
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == []
+
+    def test_production_requires_explicit_origins(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "production")
+        monkeypatch.delenv("HERMES_ALLOWED_ORIGINS", raising=False)
+        monkeypatch.delenv("HERMES_DEV_ALLOW_ALL_ORIGINS", raising=False)
+
+        from server.api.app import _resolve_cors_origins
+
+        with pytest.raises(RuntimeError, match="HERMES_ALLOWED_ORIGINS"):
+            _resolve_cors_origins()
+
+    def test_production_accepts_configured_origins(self, monkeypatch):
+        monkeypatch.setenv("HERMES_ENV", "production")
+        monkeypatch.setenv(
+            "HERMES_ALLOWED_ORIGINS",
+            "https://ui.example.com, https://admin.example.com",
+        )
+
+        from server.api.app import _resolve_cors_origins
+
+        assert _resolve_cors_origins() == [
+            "https://ui.example.com",
+            "https://admin.example.com",
+        ]
 
 class TestRunEndpoints:
     def test_list_runs_empty(self, client):
