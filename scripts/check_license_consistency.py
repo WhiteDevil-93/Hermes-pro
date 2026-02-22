@@ -27,25 +27,23 @@ def contains_license_reference(path: Path, canonical_name: str) -> bool:
 
 
 def pyproject_matches_mit(path: Path, canonical_name: str) -> tuple[bool, str]:
-    text = path.read_text(encoding="utf-8")
-    expected_text_value = 'license = { text = "MIT" }'
-    expected_classifier = '"License :: OSI Approved :: MIT License"'
-
-    has_license = expected_text_value in text
-    has_classifier = expected_classifier in text
+    with path.open("rb") as f:
+        try:
+            data = tomllib.load(f).get("project", {})
+        except Exception:
+            return False, "failed to parse pyproject.toml"
 
     if canonical_name == "MIT License":
-        ok = has_license and has_classifier
-        msg = (
-            f"expected `{expected_text_value}` and classifier {expected_classifier}"
-            if not ok
-            else "ok"
-        )
-        return ok, msg
+        license_info = data.get("license", {})
+        classifiers = data.get("classifiers", [])
+        has_license = isinstance(license_info, dict) and license_info.get("text") == "MIT"
+        has_classifier = "License :: OSI Approved :: MIT License" in classifiers
 
-    # Fallback for non-MIT repos: ensure a license field exists at least.
-    has_any_license_field = bool(re.search(r"^license\s*=\s*", text, flags=re.MULTILINE))
-    return has_any_license_field, "expected a `license = ...` entry"
+        if not (has_license and has_classifier):
+            return False, "missing or incorrect MIT license metadata in [project]"
+        return True, "ok"
+
+    return "license" in data, "expected a `license` entry in [project]"
 
 
 def main() -> int:
