@@ -30,13 +30,16 @@ jobs:
           restore-keys: pip-lint-
 
       - name: Install dev dependencies
-        run: pip install ruff
+        run: pip install ruff mypy
 
       - name: Lint (ruff check)
         run: ruff check server/ tests/
 
       - name: Format check (ruff format)
         run: ruff format --check server/ tests/
+
+      - name: Typecheck (mypy)
+        run: mypy server/ --ignore-missing-imports --no-error-summary
 
   test:
     name: Test
