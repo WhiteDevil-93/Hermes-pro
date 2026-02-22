@@ -111,7 +111,10 @@ async def create_run(request: RunRequest) -> RunResponse:
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
             _active_runs.pop(run_id, None)
+            _run_tasks.pop(run_id, None)
+            _websocket_connections.pop(run_id, None)
             _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
 
