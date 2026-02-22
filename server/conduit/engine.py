@@ -726,6 +726,7 @@ class Conduit:
                 target_url=self._config.target_url,
                 started_at=self._start_wall_time or datetime.now(timezone.utc),
                 extraction_mode=self._config.extraction_mode,
+                owner_principal=self._config.owner_principal,
                 total_signals=len(self._signals.signals),
                 status="complete",
             )

@@ -57,6 +57,7 @@ jobs:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
     strategy:
       matrix:
@@ -75,11 +76,14 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          upload: true
+          upload: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
   trivy:
     name: Container Vulnerability Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v6
 
@@ -103,7 +107,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           sarif_file: trivy-results.sarif
 
@@ -122,12 +126,19 @@ jobs:
         run: pip install bandit
 
       - name: Run bandit
-        run: bandit -r server/ -f json -o bandit-results.json --severity-level medium || true
+        run: bandit -r server/ -f json -o bandit-results.json --severity-level medium
+
+      - name: Validate bandit triage
+        run: python tools/validate_bandit_triage.py
 
       - name: Upload bandit results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bandit-results
-          path: bandit-results.json
+          path: |
+            bandit-results.json
+            bandit-gating-results.json
+            .github/security/bandit-baseline.json
+            .github/security/bandit-burndown-plan.md
           retention-days: 30

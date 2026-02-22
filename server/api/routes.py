@@ -1,11 +1,4 @@
-"""REST API routes for Hermes.
-
-Provides endpoints for:
-- Initiating scrape runs
-- Monitoring run status
-- Viewing results and signals
-- Managing configuration
-"""
+"""REST API routes for Hermes."""
 
 from __future__ import annotations
 
@@ -14,8 +7,18 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from server.api.run_repository import InMemoryRunRepository
@@ -46,12 +49,51 @@ class RunRequest(BaseModel):
     debug_mode: bool = False
 
 
+def _is_obviously_private_target(target_url: str) -> bool:
+    """Best-effort guard against SSRF to local/private targets.
+
+    This does not resolve DNS; it only validates obvious direct targets.
+    """
+    try:
+        parsed = urlparse(target_url)
+    except Exception:
+        return True
+
+    if parsed.scheme not in {"http", "https"}:
+        return True
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return True
+
+    if hostname in {"localhost", "0", "0.0.0.0", "::", "::1"}:
+        return True
+
+    if hostname.endswith(".local") or hostname.endswith(".internal"):
+        return True
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_unspecified
+        or ip.is_multicast
+        or ip.is_reserved
+    )
+
+
 class RunResponse(BaseModel):
     """Response after initiating a run."""
 
     run_id: str
     status: str
     message: str
+    run_token: str
 
 
 class RunStatus(BaseModel):
@@ -66,22 +108,81 @@ class RunStatus(BaseModel):
     signals_count: int = 0
 
 
-# --- Endpoints ---
+def _validate_api_token(auth_header: str | None, x_api_key: str | None) -> None:
+    configured_token = _api_config.api_token
+    if not configured_token:
+        return
+
+    bearer = ""
+    if auth_header and auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+
+    supplied = bearer or (x_api_key or "")
+    if not secrets.compare_digest(supplied, configured_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
+
+
+def _validate_run_token(run_id: str, run_token: str | None) -> None:
+    expected = _run_tokens.get(run_id)
+    if expected is None:
+        return
+    if not run_token or not secrets.compare_digest(run_token, expected):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing run token",
+        )
+
+
+def _append_run_summary(summary: dict[str, Any]) -> None:
+    _run_summary_ledger.parent.mkdir(parents=True, exist_ok=True)
+    with _run_summary_ledger.open("a", encoding="utf-8") as handle:
+        import json
+
+        handle.write(json.dumps(summary) + "\n")
+
+
+def _load_run_summaries() -> dict[str, dict[str, Any]]:
+    if not _run_summary_ledger.exists():
+        return {}
+    import json
+
+    summaries: dict[str, dict[str, Any]] = {}
+    with _run_summary_ledger.open(encoding="utf-8") as handle:
+        for line in handle:
+            payload = line.strip()
+            if not payload:
+                continue
+            entry = json.loads(payload)
+            run_id = entry.get("run_id")
+            if run_id:
+                summaries[run_id] = entry
+    return summaries
+
+
+def _evict_if_needed() -> None:
+    while len(_run_order) > _api_config.run_retention_limit:
+        run_id = _run_order.pop(0)
+        _run_results.pop(run_id, None)
+        _run_tokens.pop(run_id, None)
+
+
+def require_api_access(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> None:
+    _validate_api_token(authorization, x_api_key)
 
 
 @router.post("/runs", response_model=RunResponse)
-async def create_run(request: RunRequest) -> RunResponse:
-    """Initiate a new scrape run.
-
-    The run executes asynchronously. Use the returned run_id
-    to monitor progress via GET /runs/{run_id} or WebSocket.
-    """
+async def create_run(request: RunRequest, _: None = Depends(require_api_access)) -> RunResponse:
+    """Initiate a new scrape run."""
     config = HermesConfig(
         target_url=request.target_url,
         extraction_schema=request.extraction_schema,
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
+        owner_principal=principal,
         browser=BrowserConfig(headless=request.headless),
         pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
@@ -93,6 +194,7 @@ async def create_run(request: RunRequest) -> RunResponse:
         run_id=run_id,
         status="started",
         message=f"Run initiated for {request.target_url}",
+        run_token=run_token,
     )
 
 
@@ -102,11 +204,6 @@ async def get_run_status(run_id: str) -> RunStatus:
     return RunStatus(**_run_service.get_status(run_id))
 
 
-def _get_data_dir() -> Path:
-    """Resolve the data directory from environment or default."""
-    return Path(os.getenv("HERMES_DATA_DIR", "./data"))
-
-
 @router.get("/runs/{run_id}/signals")
 async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
     """Get all signals for a run."""
@@ -114,7 +211,6 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
     if active_signals is not None:
         return active_signals
 
-    # Try to load from ledger
     from server.signals.emitter import SignalEmitter
 
     data_dir = _pipeline_config.data_dir
@@ -127,8 +223,13 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
 
 
 @router.get("/runs/{run_id}/records")
-async def get_run_records(run_id: str) -> list[dict[str, Any]]:
-    """Get extracted records for a completed run."""
+async def get_run_records(
+    run_id: str,
+    run_token: str | None = Query(default=None),
+    _: None = Depends(require_api_access),
+) -> list[dict[str, Any]]:
+    _validate_run_token(run_id, run_token)
+
     from server.pipeline.manager import PipelineManager
 
     data_dir = _pipeline_config.data_dir
@@ -154,15 +255,22 @@ async def list_runs() -> dict[str, Any]:
     return _run_service.list_runs()
 
 
-# --- WebSocket for real-time Signal streaming ---
-
-
 @router.websocket("/ws/runs/{run_id}")
-async def websocket_signals(websocket: WebSocket, run_id: str) -> None:
-    """WebSocket endpoint for real-time signal streaming during active runs.
+async def websocket_signals(
+    websocket: WebSocket,
+    run_id: str,
+    run_token: str | None = Query(default=None),
+    api_token: str | None = Query(default=None),
+) -> None:
+    try:
+        auth_header = websocket.headers.get("authorization")
+        x_api_key = websocket.headers.get("x-api-key")
+        _validate_api_token(auth_header, x_api_key or api_token)
+        _validate_run_token(run_id, run_token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
 
-    Clients connect here to receive signals as they are emitted.
-    """
     await websocket.accept()
 
     _run_service.add_websocket(run_id, websocket)
@@ -172,15 +280,12 @@ async def websocket_signals(websocket: WebSocket, run_id: str) -> None:
         for signal in _run_service.get_active_signal_models(run_id):
             await websocket.send_text(signal.model_dump_json())
 
-        # Keep connection alive until client disconnects or run completes
         while True:
             try:
-                # Wait for client messages (ping/pong or control)
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
                 if data == "ping":
                     await websocket.send_text("pong")
             except asyncio.TimeoutError:
-                # Send keepalive
                 try:
                     await websocket.send_text('{"type":"keepalive"}')
                 except Exception as exc:

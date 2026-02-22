@@ -28,18 +28,23 @@ uvicorn server.api.app:app --host 0.0.0.0 --port 8080
 
 Click **Code > Codespaces > New codespace** on the repo page. The devcontainer auto-installs all dependencies and Playwright. The server port 8080 is forwarded automatically.
 
-## Architecture
+## Architecture and Project Status
 
-Hermes consists of four layers:
+### Implemented today
 
-| Layer | Name | Role |
-|-------|------|------|
-| A | **Conduit** | Execution engine, lifecycle controller, finite state machine |
-| B | **AI Engine** | Reasoning sidecar via Vertex AI Gemini (advisory only) |
-| C | **Browser Layer** | Headless browser automation (Playwright) |
-| D | **Signals** | Observability, phase tracking, audit trail |
+- **Conduit state machine** with explicit phases, transitions, and failure handling.
+- **FastAPI API surface** for run creation, run state, records, and signal streams.
+- **Playwright browser layer** for deterministic page interaction and obstruction handling.
+- **Signals pipeline** for observability and auditability of run execution.
+- **Extraction pipeline** with heuristic and AI-assisted modes.
+- **CI coverage** for lint, typecheck, tests (multi-Python), schema validation, and Docker smoke tests.
 
-**Core principle:** The Conduit owns execution. The AI Engine advises. Every state transition is observable. Every decision is traceable. Every failure is recoverable.
+### Planned / in progress
+
+- Hardening of long-running orchestration and retry policies for hostile sites.
+- Broader extraction strategies and schema-aware post-processing.
+- Expanded grounding/search integrations.
+- Production deployment docs and operations playbooks.
 
 ## API
 
@@ -71,7 +76,7 @@ curl http://localhost:8080/api/v1/runs/{run_id}/signals
 curl http://localhost:8080/api/v1/runs/{run_id}/records
 
 # Real-time via WebSocket
-wscat -c ws://localhost:8080/api/v1/ws/runs/{run_id}
+wscat -c "ws://localhost:8080/api/v1/ws/runs/{run_id}?run_token={run_token}"
 ```
 
 ### List all runs
@@ -93,12 +98,30 @@ curl http://localhost:8080/api/v1/runs
 | `HERMES_PORT` | Server port | `8080` |
 | `HERMES_LOG_LEVEL` | Logging verbosity | `INFO` |
 | `HERMES_MAX_CONCURRENT_RUNS` | Parallel run limit | `1` |
+| `HERMES_API_TOKEN` | Optional API bearer token/X-API-Key required for all API endpoints when set | (empty) |
+| `HERMES_ALLOWED_ORIGINS` | Comma-separated CORS origins (must be explicit URLs, wildcard disabled) | `http://localhost,http://127.0.0.1` |
+| `HERMES_CORS_ALLOW_CREDENTIALS` | Enables CORS credentials for explicit origins only | `false` |
+| `HERMES_RUN_RETENTION_LIMIT` | In-memory cap for completed run summaries retained by API | `200` |
 
 ### Extraction Modes
 
 - **heuristic** — CSS selectors, fast and deterministic, no AI cost
 - **ai** — Vertex AI Gemini extracts data from DOM snapshots
 - **hybrid** — Heuristic first, AI fills gaps for ambiguous fields
+
+
+## Temporary Security Posture (API hardening)
+
+The API currently enforces conservative safeguards while deeper SSRF and path hardening work is in progress:
+
+- `POST /api/v1/runs` accepts only `http://` and `https://` targets.
+- `target_url` values that clearly target local/private networks are rejected (for example `localhost`, loopback, and RFC1918/private IP ranges).
+- `GET /api/v1/grounding/search` rejects caller-provided `data_dir`; it reads only from the server-configured `HERMES_DATA_DIR`.
+
+### Known limitations
+
+- URL validation is intentionally minimal and blocks only obvious local/private targets; it does not perform DNS resolution or full SSRF defense.
+- Grounding data access is now restricted to the configured data directory, but file-level authorization and tenancy boundaries are not yet implemented.
 
 ## Project Structure
 
@@ -116,11 +139,14 @@ schemas/        # JSON Schemas
 tests/          # Test suite
 ```
 
-## Testing
+## Testing (matches CI)
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
+pip install -e '.[dev]'
+ruff check server/ tests/
+ruff format --check server/ tests/
+mypy server/ --ignore-missing-imports --no-error-summary
+pytest tests/ -v --cov=server --cov-report=term-missing --cov-report=xml
 ```
 
 ## Conduit Phases
@@ -145,4 +171,4 @@ Any phase can transition to `FAIL`. Every transition emits a Signal.
 
 ## License
 
-Proprietary — Themyscira Project
+This project is licensed under the [MIT License](LICENSE).
