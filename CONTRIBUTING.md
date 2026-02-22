@@ -18,7 +18,7 @@ git clone https://github.com/WhiteDevil-93/Hermes-pro.git
 cd Hermes-pro
 
 # Install in editable mode with dev dependencies
-pip install -e ".[dev]"
+pip install -e '.[dev]'
 
 # Install Playwright browser
 playwright install chromium --with-deps
