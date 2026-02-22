@@ -21,7 +21,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from server.config.settings import PipelineConfig
 
@@ -93,11 +93,20 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 
 @router.get("/search")
 async def search(
+    request: Request,
     q: str = Query(..., description="Search query"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
+
+    Note: caller-controlled `data_dir` overrides are blocked.
     """
+    if "data_dir" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail="data_dir override is disabled; configure HERMES_DATA_DIR on the server",
+        )
+
     return _search_extraction_store(q, Path(_pipeline_config.data_dir))

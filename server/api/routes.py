@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import os
-from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -237,6 +235,7 @@ async def get_run_status(
         )
 
     raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
 
 
 @router.get("/runs/{run_id}/signals")

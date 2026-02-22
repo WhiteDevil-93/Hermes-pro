@@ -103,7 +103,6 @@ class TestRunEndpoints:
         )
         assert response.status_code == 404
 
-
     def test_create_run_rejects_non_http_scheme(self, client):
         response = client.post(
             "/api/v1/runs",
@@ -115,6 +114,13 @@ class TestRunEndpoints:
         response = client.post(
             "/api/v1/runs",
             json={"target_url": "http://127.0.0.1/admin", "extraction_mode": "heuristic"},
+        )
+        assert response.status_code == 400
+
+    def test_create_run_rejects_ipv6_loopback_target(self, client):
+        response = client.post(
+            "/api/v1/runs",
+            json={"target_url": "http://[::1]/admin", "extraction_mode": "heuristic"},
         )
         assert response.status_code == 400
 
@@ -142,7 +148,7 @@ class TestRunEndpoints:
 
 
 class TestGroundingEndpoint:
-    def test_grounding_search_ignores_data_dir_override(self, client, tmp_path, monkeypatch):
+    def test_grounding_search_rejects_data_dir_override(self, client, tmp_path, monkeypatch):
         from server.grounding import search_api
 
         trusted_dir = tmp_path / "trusted"
@@ -161,8 +167,21 @@ class TestGroundingEndpoint:
             "/api/v1/grounding/search",
             params={"q": "alpha", "data_dir": str(attacker_dir)},
         )
+        assert response.status_code == 400
+        assert "data_dir override is disabled" in response.json()["detail"]
+
+    def test_grounding_search_uses_configured_data_dir(self, client, tmp_path, monkeypatch):
+        from server.grounding import search_api
+
+        trusted_dir = tmp_path / "trusted"
+        run_dir = trusted_dir / "run_1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "records.jsonl").write_text('{"fields": {"title": {"value": "alpha"}}}\n')
+
+        monkeypatch.setattr(search_api._pipeline_config, "data_dir", trusted_dir)
+
+        response = client.get("/api/v1/grounding/search", params={"q": "alpha"})
         assert response.status_code == 200
         results = response.json()
         assert results
         assert any("alpha" in item.get("snippet", "") for item in results)
-        assert all("omega" not in item.get("snippet", "") for item in results)

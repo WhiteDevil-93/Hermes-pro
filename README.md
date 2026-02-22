@@ -133,7 +133,7 @@ The API currently enforces conservative safeguards while deeper SSRF and path ha
 
 - `POST /api/v1/runs` accepts only `http://` and `https://` targets.
 - `target_url` values that clearly target local/private networks are rejected (for example `localhost`, loopback, and RFC1918/private IP ranges).
-- `GET /api/v1/grounding/search` no longer accepts a caller-provided `data_dir`; it reads only from the server-configured `HERMES_DATA_DIR`.
+- `GET /api/v1/grounding/search` rejects caller-provided `data_dir`; it reads only from the server-configured `HERMES_DATA_DIR`.
 
 ### Known limitations
 
