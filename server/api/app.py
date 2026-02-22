@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from collections.abc import Callable
 
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
+
+from server.api.auth import extract_principal_from_headers
 from server.api.routes import router
 from server.grounding.search_api import router as grounding_router
 
@@ -31,6 +35,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def authentication_middleware(request: Request, call_next: Callable) -> Response:
+    """Attach authenticated principal to request state for route dependencies."""
+    request.state.principal = extract_principal_from_headers(request)
+    return await call_next(request)
+
 
 app.include_router(router, prefix="/api/v1")
 app.include_router(grounding_router, prefix="/api/v1/grounding", tags=["grounding"])
