@@ -18,10 +18,12 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from server.conduit.engine import Conduit
-from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
+from server.config.settings import HermesConfig, PipelineConfig
 from server.signals.types import Signal
 
 router = APIRouter()
+
+_pipeline_config = PipelineConfig()
 
 # In-memory store for active and completed runs
 _active_runs: dict[str, Conduit] = {}
@@ -111,6 +113,7 @@ async def create_run(request: RunRequest) -> RunResponse:
             result = await conduit.run()
             _run_results[run_id] = result
         finally:
+            # Ensure we always clean up per-run state, regardless of success, failure, or cancellation
             _active_runs.pop(run_id, None)
             _run_tasks.pop(run_id, None)
             _websocket_connections.pop(run_id, None)
@@ -168,7 +171,7 @@ async def get_run_signals(run_id: str) -> list[dict[str, Any]]:
     # Try to load from ledger
     from server.signals.emitter import SignalEmitter
 
-    data_dir = _get_data_dir()
+    data_dir = _pipeline_config.data_dir
     ledger_path = data_dir / run_id / "signals.jsonl"
     if ledger_path.exists():
         signals = SignalEmitter.load_ledger(ledger_path)
@@ -182,7 +185,7 @@ async def get_run_records(run_id: str) -> list[dict[str, Any]]:
     """Get extracted records for a completed run."""
     from server.pipeline.manager import PipelineManager
 
-    data_dir = _get_data_dir()
+    data_dir = _pipeline_config.data_dir
     output_path = data_dir / run_id / "records.jsonl"
 
     if output_path.exists():
