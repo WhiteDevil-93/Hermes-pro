@@ -15,10 +15,10 @@ PYPROJECT_FILE = ROOT / "pyproject.toml"
 
 
 def canonical_license_name() -> str:
-    first_line = LICENSE_FILE.read_text(encoding="utf-8").splitlines()[0].strip()
-    if not first_line:
-        raise ValueError("LICENSE file is empty")
-    return first_line
+    lines = LICENSE_FILE.read_text(encoding="utf-8").splitlines()
+    if not lines or not lines[0].strip():
+        raise ValueError("LICENSE file is empty or missing header")
+    return lines[0].strip()
 
 
 def contains_license_reference(path: Path, canonical_name: str) -> bool:
