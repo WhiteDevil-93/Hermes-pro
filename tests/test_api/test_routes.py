@@ -64,11 +64,11 @@ class TestRunEndpoints:
         assert response.status_code == 404
 
 
-    def test_create_run_minimal_payload_does_not_error_during_config_assembly(self, client, monkeypatch):
+    def test_create_run_with_minimal_payload(self, client, monkeypatch):
         monkeypatch.setattr(routes, "Conduit", _DummyConduit)
 
         response = client.post(
-            "/api/v1/runs",
+"/api/v1/runs",
             json={"target_url": "https://example.com"},
         )
 
