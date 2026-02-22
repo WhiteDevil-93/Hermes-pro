@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 from typing import Final
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from collections.abc import Callable
 
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import Response
+
+from server.api.auth import extract_principal_from_headers
 from server.api.routes import router
 from server.grounding.search_api import router as grounding_router
 
