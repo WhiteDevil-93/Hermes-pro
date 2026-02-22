@@ -124,7 +124,7 @@ tests/          # Test suite
 ## Testing (matches CI)
 
 ```bash
-pip install -e ".[dev]"
+pip install -e '.[dev]'
 ruff check server/ tests/
 ruff format --check server/ tests/
 mypy server/ --ignore-missing-imports --no-error-summary
