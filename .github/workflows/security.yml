@@ -31,14 +31,33 @@ jobs:
           key: pip-audit-${{ hashFiles('pyproject.toml') }}
           restore-keys: pip-audit-
 
+      - name: Build audit requirements from pyproject
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          project = pyproject.get("project", {})
+
+          requirements = list(project.get("dependencies", []))
+          requirements.extend(project.get("optional-dependencies", {}).get("dev", []))
+
+          Path(".pip-audit-requirements.txt").write_text(
+              "\n".join(requirements) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Wrote {len(requirements)} requirements for pip-audit")
+          PY
+
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -r .pip-audit-requirements.txt
 
       - name: Install pip-audit
         run: pip install pip-audit
 
       - name: Run pip-audit
-        run: pip-audit --strict --desc on
+        run: pip-audit --strict --desc on -r .pip-audit-requirements.txt
 
   gitleaks:
     name: Secret Detection
