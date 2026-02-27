@@ -122,7 +122,7 @@ jobs:
         run: pip install bandit
 
       - name: Run bandit
-        run: bandit -r server/ -f json -o bandit-results.json --severity-level medium || true
+        run: bandit -r server/ -f json -o bandit-results.json --severity-level high
 
       - name: Upload bandit results
         uses: actions/upload-artifact@v4

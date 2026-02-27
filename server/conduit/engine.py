@@ -42,6 +42,7 @@ from server.browser.layer import ActionStatus, BrowserLayer, DOMSnapshot
 from server.browser.obstruction import ObstructionType, detect_obstruction
 from server.conduit.phases import TERMINAL_PHASES, VALID_TRANSITIONS, Phase
 from server.config.settings import HermesConfig
+from server.config.url_policy import validate_target_url
 from server.pipeline.extraction import ExtractionRecord, FieldValue, RecordMetadata
 from server.pipeline.heuristic import heuristic_extract
 from server.pipeline.manager import PipelineManager, RunMetadata
@@ -204,6 +205,14 @@ class Conduit:
     async def _phase_init(self) -> None:
         """INIT: Validate config, prepare browser context, set timeout budgets."""
         try:
+            # Validate target URL against SSRF policy
+            url_check = validate_target_url(
+                self._config.target_url, self._config.url_policy
+            )
+            if not url_check.allowed:
+                await self._fail(f"Target URL blocked by policy: {url_check.reason}")
+                return
+
             # Start browser
             await self._browser.start()
 
@@ -464,6 +473,10 @@ class Conduit:
                 )
             elif action.function == "navigate_url":
                 url = params["url"]
+                # SSRF check on navigation targets
+                url_check = validate_target_url(url, self._config.url_policy)
+                if not url_check.allowed:
+                    return "failure"
                 if not self._config.allow_cross_origin:
                     current_origin = urlparse(self._config.target_url).netloc
                     target_origin = urlparse(url).netloc

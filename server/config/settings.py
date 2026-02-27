@@ -50,6 +50,34 @@ class BrowserConfig(BaseModel):
     locale: str = "en-US"
 
 
+class AuthConfig(BaseModel):
+    """Authentication configuration."""
+
+    api_token: str = Field(
+        default_factory=lambda: os.getenv("HERMES_API_TOKEN", "")
+    )
+    require_auth: bool = Field(
+        default_factory=lambda: os.getenv("HERMES_API_TOKEN", "") != ""
+    )
+
+
+class URLPolicyConfig(BaseModel):
+    """URL validation policy for SSRF prevention."""
+
+    allowed_schemes: frozenset[str] = frozenset({"http", "https"})
+    block_private_ips: bool = True
+    block_local_hostnames: bool = True
+    extra_blocked_cidrs: list[str] = Field(default_factory=list)
+
+
+class RetentionConfig(BaseModel):
+    """Run retention and eviction configuration."""
+
+    max_completed_runs: int = Field(
+        default_factory=lambda: int(os.getenv("HERMES_MAX_COMPLETED_RUNS", "100"))
+    )
+
+
 class PipelineConfig(BaseModel):
     """Data pipeline configuration."""
 
@@ -68,6 +96,9 @@ class HermesConfig(BaseModel):
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
+    url_policy: URLPolicyConfig = Field(default_factory=URLPolicyConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
     max_concurrent_runs: int = Field(
         default_factory=lambda: int(os.getenv("HERMES_MAX_CONCURRENT_RUNS", "1"))
     )

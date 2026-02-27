@@ -11,9 +11,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  smoke:
+    name: Bootstrap Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Verify app imports
+        run: python -c "import server.api.app; print('Bootstrap OK')"
+
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    needs: smoke
     steps:
       - uses: actions/checkout@v6
 

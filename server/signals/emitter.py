@@ -7,11 +7,14 @@ A Hermes run without Signals is a broken run.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 import aiofiles
+
+logger = logging.getLogger(__name__)
 
 from server.signals.types import Signal, SignalType
 
@@ -99,9 +102,15 @@ class SignalEmitter:
                 result = subscriber(signal)
                 if asyncio.iscoroutine(result):
                     await result
-            except Exception:
-                # Subscribers must not break the emission pipeline
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Subscriber %s failed for signal seq=%d type=%s: %s",
+                    getattr(subscriber, "__name__", repr(subscriber)),
+                    signal.sequence,
+                    signal.signal_type.value,
+                    exc,
+                    exc_info=True,
+                )
 
     async def emit_phase_transition(
         self, from_phase: str, to_phase: str, context: dict[str, Any] | None = None

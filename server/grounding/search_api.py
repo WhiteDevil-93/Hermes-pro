@@ -17,11 +17,15 @@ The endpoint conforms to Vertex AI's required interface:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Query
 
 router = APIRouter()
+
+# Locked data directory — not user-controllable
+_GROUNDING_DATA_DIR = Path(os.getenv("HERMES_DATA_DIR", "./data"))
 
 
 def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]:
@@ -89,11 +93,10 @@ def _search_extraction_store(query: str, data_dir: Path) -> list[dict[str, str]]
 @router.get("/search")
 async def search(
     q: str = Query(..., description="Search query"),
-    data_dir: str = Query("./data", description="Data directory path"),
 ) -> list[dict[str, str]]:
     """Search the Hermes extraction history.
 
     Returns results in Vertex AI grounding format:
     [{"snippet": "...", "uri": "..."}]
     """
-    return _search_extraction_store(q, Path(data_dir))
+    return _search_extraction_store(q, _GROUNDING_DATA_DIR)

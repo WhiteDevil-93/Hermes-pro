@@ -125,6 +125,31 @@ class TestObstructionDetection:
         assert result.obstruction_type == ObstructionType.HARD_BLOCK
 
 
+class TestURLPolicyInEngine:
+    """Test URL policy enforcement for function call navigation."""
+
+    def test_navigate_url_loopback_blocked(self):
+        from server.config.settings import URLPolicyConfig
+        from server.config.url_policy import validate_target_url
+
+        result = validate_target_url("http://127.0.0.1:9200", URLPolicyConfig())
+        assert not result.allowed
+
+    def test_navigate_url_private_blocked(self):
+        from server.config.settings import URLPolicyConfig
+        from server.config.url_policy import validate_target_url
+
+        result = validate_target_url("http://10.0.0.1/admin", URLPolicyConfig())
+        assert not result.allowed
+
+    def test_navigate_url_file_scheme_blocked(self):
+        from server.config.settings import URLPolicyConfig
+        from server.config.url_policy import validate_target_url
+
+        result = validate_target_url("file:///etc/shadow", URLPolicyConfig())
+        assert not result.allowed
+
+
 class TestHermesConfig:
     """Test configuration validation."""
 
@@ -145,3 +170,12 @@ class TestHermesConfig:
         assert config.retry.max_retries == 5
         assert config.timeouts.global_timeout_s == 600
         assert len(config.heuristic_selectors) == 2
+
+    def test_config_includes_security_models(self):
+        config = HermesConfig(target_url="https://example.com")
+        assert hasattr(config, "auth")
+        assert hasattr(config, "url_policy")
+        assert hasattr(config, "retention")
+        assert config.auth.require_auth is False
+        assert "http" in config.url_policy.allowed_schemes
+        assert config.retention.max_completed_runs == 100
