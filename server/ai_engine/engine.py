@@ -327,14 +327,23 @@ class AIEngine:
             from vertexai.generative_models import GenerationConfig
 
             prompt = (
-                "Analyze this HTML page and classify its state.\n"
-                "Return a JSON object with:\n"
-                "- page_state: one of CONTENT_VISIBLE, GATED, BLOCKED,"
-                " ERROR, LOADING, REDIRECT, EMPTY\n"
-                "- confidence: float 0.0-1.0\n"
-                "- content_regions_detected: integer count of main content areas\n"
-                "- obstruction_indicators: list of strings describing any obstructions\n\n"
-                f"HTML:\n{dom_html[:50000]}"  # Truncate to control token usage
+                "You are an expert web intelligence analyst. Your task is to classify "
+                "the state of the HTML page below.\n\n"
+                "Page state definitions:\n"
+                "  CONTENT_VISIBLE — Main content is accessible with no obstruction\n"
+                "  GATED — Content is behind a login wall, paywall, age gate, or "
+                "subscription prompt\n"
+                "  BLOCKED — Access is denied: bot detection, IP ban, geo-restriction, "
+                "or CAPTCHA\n"
+                "  ERROR — The server returned an error page (404, 500, 503, etc.)\n"
+                "  LOADING — Page is still loading: spinner, skeleton screen, or "
+                "'please wait' message\n"
+                "  REDIRECT — A redirect stub with no meaningful content\n"
+                "  EMPTY — Page loaded successfully but contains no meaningful content\n\n"
+                "For obstruction_indicators, list specific observable signals you see "
+                "in the HTML, e.g. 'cookie consent modal', 'login form overlay', "
+                "'CAPTCHA challenge', 'paywall blur', 'age verification gate'.\n\n"
+                f"HTML:\n{dom_html[:50000]}"
             )
 
             response = await self._client.generate_content_async(
@@ -391,20 +400,32 @@ class AIEngine:
 
             attempts_context = ""
             if prior_attempts:
-                attempts_context = "\nPrior failed attempts:\n" + "\n".join(
-                    f"- {a}" for a in prior_attempts
+                attempts_context = (
+                    "\nPrior failed attempts (do NOT repeat these same strategies):\n"
+                    + "\n".join(f"  {i + 1}. {a}" for i, a in enumerate(prior_attempts))
+                    + "\n"
                 )
 
             prompt = (
-                "You are navigating a web page that has an"
-                f" obstruction of type: {obstruction_type}\n"
+                "You are an expert web automation agent. Your task is to generate a "
+                "precise, minimal browser action plan to resolve a page obstruction.\n\n"
+                f"Obstruction type: {obstruction_type}\n"
                 f"Target extraction schema: {json.dumps(target_schema)}\n"
-                f"{attempts_context}\n\n"
-                "Generate a navigation plan as a list of browser actions.\n"
-                "Each action must be one of: click, scroll, fill_form, hover, press_key, "
-                "wait_for, navigate_url.\n"
-                "Return JSON with: actions (list of {function, parameters, expected_outcome}), "
-                "estimated_steps (int), confidence (float 0-1).\n\n"
+                f"{attempts_context}\n"
+                "Permitted browser functions — use ONLY these, never others:\n"
+                "  click(selector, wait_after_ms?) — click element by CSS selector\n"
+                "  scroll(direction, amount) — direction: 'up'/'down'; "
+                "amount: pixels, 'page', or 'end'\n"
+                "  fill_form(selector, value) — type text into a form field\n"
+                "  hover(selector) — hover over an element\n"
+                "  press_key(key) — send a key: Escape, Enter, Tab, Space, etc.\n"
+                "  wait_for(selector, timeout_ms?) — wait for element to appear in DOM\n"
+                "  navigate_url(url) — navigate to URL (same-origin only)\n\n"
+                "Selector guidance: prefer stable attributes — [data-*], [aria-label], "
+                "[id], semantic tags (<button>, <input>). Avoid short dynamically "
+                "generated class names like .cls-abc123.\n\n"
+                "Return JSON: {actions: [{function, parameters, expected_outcome}], "
+                "estimated_steps: int, confidence: float 0-1}.\n\n"
                 f"HTML:\n{dom_html[:50000]}"
             )
 
@@ -470,13 +491,21 @@ class AIEngine:
             from vertexai.generative_models import GenerationConfig
 
             prompt = (
-                "Extract structured data from this HTML according to the given schema.\n"
+                "You are an expert data extraction specialist. Extract structured "
+                "records from the HTML below, strictly following the provided schema.\n\n"
                 f"Schema: {json.dumps(schema)}\n"
                 f"Source URL: {source_url}\n\n"
-                "Return JSON with:\n"
-                "- records: list of objects matching the schema fields\n"
-                "- completeness_score: float 0-1\n"
-                "- duplicates_detected: integer\n\n"
+                "Extraction rules:\n"
+                "  1. Return one record per distinct entity found in the page.\n"
+                "  2. Match schema field types exactly: numbers as JSON numbers (not "
+                "strings), dates as ISO-8601 strings (YYYY-MM-DD), booleans as "
+                "true/false.\n"
+                "  3. For optional schema fields absent from the page, use null — "
+                "never an empty string.\n"
+                "  4. If two records share identical values for all fields, count only "
+                "one and increment duplicates_detected.\n"
+                "  5. Set completeness_score to the fraction of schema fields that are "
+                "non-null across all extracted records (0.0–1.0).\n\n"
                 f"HTML:\n{dom_html[:50000]}"
             )
 
@@ -511,11 +540,47 @@ class AIEngine:
         try:
             from vertexai.generative_models import GenerationConfig
 
+            # Build a human-readable diagnosis of what went wrong
+            issues: list[str] = []
+            records_list = partial_data.get("records", [])
+            if not records_list:
+                issues.append("no records were extracted at all")
+            else:
+                schema_fields = set(schema.keys()) if isinstance(schema, dict) else set()
+                for idx, rec in enumerate(records_list):
+                    rec_fields = set(rec.keys()) if isinstance(rec, dict) else set()
+                    missing = schema_fields - rec_fields
+                    if missing:
+                        issues.append(f"record {idx}: missing fields {sorted(missing)}")
+                    low_conf = [
+                        k
+                        for k, v in rec.items()
+                        if isinstance(v, dict) and v.get("confidence", 1.0) < 0.5
+                    ]
+                    if low_conf:
+                        issues.append(f"record {idx}: low-confidence fields {low_conf}")
+            issues_text = (
+                "\n".join(f"  - {issue}" for issue in issues)
+                if issues
+                else "  - completeness_score is below threshold"
+            )
+
             prompt = (
-                "The following extraction is incomplete or has errors. "
-                "Repair it using the DOM content.\n\n"
-                f"Partial data: {json.dumps(partial_data)}\n"
-                f"Target schema: {json.dumps(schema)}\n\n"
+                "You are an expert data extraction repair specialist. The previous "
+                "extraction attempt was incomplete or contained errors. "
+                "Your task is to repair it.\n\n"
+                "What went wrong:\n"
+                f"{issues_text}\n\n"
+                f"Partial extraction data:\n{json.dumps(partial_data)}\n\n"
+                f"Target schema:\n{json.dumps(schema)}\n\n"
+                "Repair rules:\n"
+                "  1. Output only records that improve upon the partial data.\n"
+                "  2. For any field already present with confidence >= 0.5, preserve it.\n"
+                "  3. Fill missing fields by locating them in the HTML below.\n"
+                "  4. Match schema field types: numbers as JSON numbers, dates as "
+                "ISO-8601 strings, missing optional fields as null.\n"
+                "  5. Set completeness_score to the fraction of schema fields now "
+                "non-null.\n\n"
                 f"HTML:\n{dom_html[:50000]}"
             )
 
