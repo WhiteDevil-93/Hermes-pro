@@ -1,3 +1,3 @@
-from server.ai_engine.engine import AIEngine
+from server.ai_engine.engine import AIEngine, AttemptRecord
 
-__all__ = ["AIEngine"]
+__all__ = ["AIEngine", "AttemptRecord"]

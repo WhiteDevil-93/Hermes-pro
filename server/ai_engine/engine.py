@@ -59,6 +59,22 @@ class ExtractionResult(BaseModel):
     duplicates_detected: int = 0
 
 
+class AttemptRecord(BaseModel):
+    """Records one failed navigation or extraction attempt for cross-retry AI context.
+
+    Replaces the flat list[str] previously used for prior_attempts, enabling
+    Gemini to reason about what was tried, which selectors failed, and in what
+    phase each failure occurred — rather than reading unstructured error strings.
+    """
+
+    phase: str                  # Phase where this attempt occurred, e.g. "AI_REASON"
+    action: str                 # Action type, e.g. "click", "generate_navigation_plan"
+    detail: str                 # Selector, URL, or parameter detail used
+    outcome: str                # "failure" | "rejected" | "empty_plan" | "timeout"
+    obstruction_type: str = ""  # Obstruction context at time of attempt
+    dom_hash: str = ""          # DOM fingerprint at time of attempt
+
+
 # --- Allowed Function Names (Trust Boundary) ---
 
 ALLOWED_NAVIGATION_FUNCTIONS = frozenset(
@@ -386,7 +402,7 @@ class AIEngine:
         dom_html: str,
         obstruction_type: str,
         target_schema: dict[str, Any],
-        prior_attempts: list[str] | None = None,
+        prior_attempts: list[AttemptRecord] | None = None,
     ) -> NavigationPlan:
         """Generate a navigation plan to resolve an obstruction.
 
@@ -399,12 +415,30 @@ class AIEngine:
             from vertexai.generative_models import GenerationConfig
 
             attempts_context = ""
+            failed_selectors: list[str] = []
             if prior_attempts:
+                lines = []
+                for i, rec in enumerate(prior_attempts):
+                    line = (
+                        f"  {i + 1}. phase={rec.phase} action={rec.action} "
+                        f"detail={rec.detail!r} outcome={rec.outcome}"
+                    )
+                    if rec.obstruction_type:
+                        line += f" obstruction={rec.obstruction_type}"
+                    lines.append(line)
+                    if rec.action in ("click", "fill_form", "hover", "wait_for") and rec.detail:
+                        failed_selectors.append(rec.detail)
                 attempts_context = (
                     "\nPrior failed attempts (do NOT repeat these same strategies):\n"
-                    + "\n".join(f"  {i + 1}. {a}" for i, a in enumerate(prior_attempts))
+                    + "\n".join(lines)
                     + "\n"
                 )
+                if failed_selectors:
+                    attempts_context += (
+                        "\nDo NOT use these selectors — they already failed:\n"
+                        + "\n".join(f"  - {s}" for s in failed_selectors)
+                        + "\n"
+                    )
 
             prompt = (
                 "You are an expert web automation agent. Your task is to generate a "

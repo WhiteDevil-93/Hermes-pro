@@ -36,6 +36,7 @@ from urllib.parse import urlparse
 
 from server.ai_engine.engine import (
     AIEngine,
+    AttemptRecord,
     FunctionCall,
     validate_function_call,
 )
@@ -74,7 +75,7 @@ class Conduit:
         self._attempts = 0
         self._ai_calls = 0
         self._interaction_trace: list[str] = []
-        self._prior_ai_attempts: list[str] = []
+        self._prior_ai_attempts: list[AttemptRecord] = []
 
         # Components (initialized during INIT phase)
         self._browser = BrowserLayer(config.browser)
@@ -316,6 +317,18 @@ class Conduit:
                 await self._transition(Phase.NAVIGATE)
                 return
 
+            # Heuristic click failed — record it so AI won't retry the same selector
+            self._prior_ai_attempts.append(
+                AttemptRecord(
+                    phase="OBSTRUCT",
+                    action="click",
+                    detail=obstruction.selector,
+                    outcome="failure",
+                    obstruction_type=obstruction.obstruction_type.value,
+                    dom_hash=self._current_dom.dom_hash if self._current_dom else "",
+                )
+            )
+
         # Heuristic failed or AI needed — escalate
         if self._ai_engine.is_available:
             await self._transition(
@@ -375,7 +388,16 @@ class Conduit:
         )
 
         if not plan.actions:
-            self._prior_ai_attempts.append("AI returned empty plan")
+            self._prior_ai_attempts.append(
+                AttemptRecord(
+                    phase="AI_REASON",
+                    action="generate_navigation_plan",
+                    detail=obstruction.obstruction_type.value,
+                    outcome="empty_plan",
+                    obstruction_type=obstruction.obstruction_type.value,
+                    dom_hash=self._current_dom.dom_hash,
+                )
+            )
             if self._attempts < self._config.retry.max_retries:
                 self._attempts += 1
                 await self._transition(Phase.NAVIGATE)
@@ -400,7 +422,16 @@ class Conduit:
                 validated_actions.append(action)
 
         if not validated_actions:
-            self._prior_ai_attempts.append("All AI actions were rejected by validation")
+            self._prior_ai_attempts.append(
+                AttemptRecord(
+                    phase="AI_REASON",
+                    action="validate_plan",
+                    detail="all_actions_rejected",
+                    outcome="rejected",
+                    obstruction_type=obstruction.obstruction_type.value,
+                    dom_hash=self._current_dom.dom_hash,
+                )
+            )
             await self._fail("All AI-generated actions rejected by allowlist validation")
             return
 
@@ -428,7 +459,16 @@ class Conduit:
 
             if result != "success":
                 self._prior_ai_attempts.append(
-                    f"Action {action.function}({action.parameters}) failed: {result}"
+                    AttemptRecord(
+                        phase="EXECUTE_PLAN",
+                        action=action.function,
+                        detail=str(
+                            action.parameters.get("selector")
+                            or action.parameters.get("url")
+                            or str(action.parameters)
+                        ),
+                        outcome=result,
+                    )
                 )
                 break
 
@@ -486,7 +526,7 @@ class Conduit:
                 suppressed=True,
                 run_id=self._run_id,
                 phase=self._phase.value,
-                details={"action": function_call.function},
+                details={"action": action.function},
             )
             return "failure"
 
