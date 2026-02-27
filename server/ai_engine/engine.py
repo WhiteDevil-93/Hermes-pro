@@ -566,8 +566,13 @@ class AIEngine:
         partial_data: dict[str, Any],
         schema: dict[str, Any],
         dom_html: str,
+        repair_context: list[str] | None = None,
     ) -> ExtractionResult:
-        """Repair incomplete extraction using AI guidance."""
+        """Repair incomplete extraction using AI guidance.
+
+        repair_context carries a history of prior repair cycles so each
+        attempt builds on what the previous one diagnosed and produced.
+        """
         if not self.is_available:
             return ExtractionResult()
 
@@ -599,12 +604,24 @@ class AIEngine:
                 else "  - completeness_score is below threshold"
             )
 
+            prior_cycles_text = ""
+            if repair_context:
+                cycle_lines = "\n".join(
+                    f"  Cycle {i + 1}: {entry}" for i, entry in enumerate(repair_context)
+                )
+                prior_cycles_text = (
+                    "\nPrior repair cycle history (most recent last):\n"
+                    + cycle_lines
+                    + "\n"
+                )
+
             prompt = (
                 "You are an expert data extraction repair specialist. The previous "
                 "extraction attempt was incomplete or contained errors. "
                 "Your task is to repair it.\n\n"
                 "What went wrong:\n"
-                f"{issues_text}\n\n"
+                f"{issues_text}\n"
+                f"{prior_cycles_text}\n"
                 f"Partial extraction data:\n{json.dumps(partial_data)}\n\n"
                 f"Target schema:\n{json.dumps(schema)}\n\n"
                 "Repair rules:\n"
@@ -614,7 +631,9 @@ class AIEngine:
                 "  4. Match schema field types: numbers as JSON numbers, dates as "
                 "ISO-8601 strings, missing optional fields as null.\n"
                 "  5. Set completeness_score to the fraction of schema fields now "
-                "non-null.\n\n"
+                "non-null.\n"
+                "  6. Do not repeat a strategy that a prior cycle already tried and "
+                "failed — try a different region or approach.\n\n"
                 f"HTML:\n{dom_html[:50000]}"
             )
 

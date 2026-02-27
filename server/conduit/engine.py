@@ -74,8 +74,10 @@ class Conduit:
         self._start_wall_time: datetime | None = None  # wall-clock, for metadata timestamps
         self._attempts = 0
         self._ai_calls = 0
+        self._repair_attempts = 0
         self._interaction_trace: list[str] = []
         self._prior_ai_attempts: list[AttemptRecord] = []
+        self._repair_context: list[str] = []  # Accumulates diagnosis across repair cycles
 
         # Components (initialized during INIT phase)
         self._browser = BrowserLayer(config.browser)
@@ -663,6 +665,7 @@ class Conduit:
                 )
                 # If AI is available, try repair
                 if self._ai_engine.is_available:
+                    self._repair_context.append("no records were extracted at all")
                     await self._transition(Phase.REPAIR)
                 else:
                     await self._fail("No records extracted and no AI available for repair")
@@ -673,16 +676,23 @@ class Conduit:
         # Check confidence thresholds
         min_threshold = self._config.pipeline.min_confidence_threshold
         flagged = 0
+        flagged_names: list[str] = []
         for record in records:
             for field_name, field in record.fields.items():
                 if field.confidence < min_threshold:
                     flagged += 1
+                    flagged_names.append(f"{field_name}(conf={field.confidence:.2f})")
 
         # If too many low-confidence fields and AI available, try repair
         total_fields = sum(len(r.fields) for r in records)
         if flagged > 0 and flagged / max(total_fields, 1) > 0.5 and self._ai_engine.is_available:
             if self._attempts < self._config.retry.max_retries:
                 self._attempts += 1
+                diagnosis = (
+                    f"{flagged}/{total_fields} fields below confidence {min_threshold}"
+                    + (f": {', '.join(flagged_names[:10])}" if flagged_names else "")
+                )
+                self._repair_context.append(diagnosis)
                 await self._transition(Phase.REPAIR)
                 return
 
@@ -708,6 +718,16 @@ class Conduit:
             await self._fail("Cannot repair: AI unavailable or no DOM")
             return
 
+        # Guard: enforce independent repair attempt budget
+        if self._repair_attempts >= self._config.retry.max_repair_attempts:
+            await self._fail(
+                f"Repair budget exhausted after {self._repair_attempts} cycle(s) "
+                f"(max_repair_attempts={self._config.retry.max_repair_attempts})"
+            )
+            return
+
+        self._repair_attempts += 1
+
         records = self._pipeline.processed_records
         partial_data = {}
         if records:
@@ -718,7 +738,11 @@ class Conduit:
 
         await self._signals.emit(
             SignalType.AI_INVOKED,
-            {"request_type": "repair", "dom_size": len(self._current_dom.html)},
+            {
+                "request_type": "repair",
+                "dom_size": len(self._current_dom.html),
+                "repair_attempt_number": self._repair_attempts,
+            },
         )
 
         start = time.monotonic()
@@ -726,6 +750,7 @@ class Conduit:
             partial_data=partial_data,
             schema=self._config.extraction_schema,
             dom_html=self._current_dom.html,
+            repair_context=self._repair_context or None,
         )
         latency = round((time.monotonic() - start) * 1000)
         self._ai_calls += 1
@@ -733,6 +758,12 @@ class Conduit:
         await self._signals.emit(
             SignalType.AI_RESPONDED,
             {"response_type": "repair", "latency_ms": latency},
+        )
+
+        # Record what this cycle produced so the next cycle has context
+        self._repair_context.append(
+            f"Cycle {self._repair_attempts} produced {len(result.records)} record(s) "
+            f"with completeness_score={result.completeness_score:.2f}"
         )
 
         # Add repaired records

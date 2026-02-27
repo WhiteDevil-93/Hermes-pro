@@ -31,6 +31,7 @@ class RetryConfig(BaseModel):
     """Retry and backoff configuration."""
 
     max_retries: int = 3
+    max_repair_attempts: int = 2  # Independent cap for VALIDATE→REPAIR cycles
     backoff_base_ms: int = 1000
     backoff_max_ms: int = 30000
     jitter: bool = True
