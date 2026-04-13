@@ -19,7 +19,7 @@ dependencies = [
     "jsonschema>=4.23.0",
     "httpx>=0.28.0",
     "websockets>=14.0",
-    "google-cloud-aiplatform>=1.74.0",
+    "google-cloud-aiplatform>=1.147.0",
     "structlog>=24.4.0",
     "aiofiles>=24.1.0",
 ]
