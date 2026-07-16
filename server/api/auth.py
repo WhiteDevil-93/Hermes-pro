@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request, WebSocket
 
-
 AUTH_REQUIRED_DETAIL = "Authentication required"
 
 

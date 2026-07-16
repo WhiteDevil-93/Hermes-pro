@@ -486,7 +486,7 @@ class Conduit:
                 suppressed=True,
                 run_id=self._run_id,
                 phase=self._phase.value,
-                details={"action": function_call.function},
+                details={"action": action.function},
             )
             return "failure"
 
