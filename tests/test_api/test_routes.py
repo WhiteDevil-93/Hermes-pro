@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from fastapi.testclient import TestClient
 
 from server.api import routes
 from server.api.app import app
 
+
 @pytest.fixture
 def client():
     return TestClient(app)
+
 
 class TestHealthEndpoint:
     def test_health_check(self, client):
@@ -22,6 +22,7 @@ class TestHealthEndpoint:
         assert data["status"] == "healthy"
         assert data["service"] == "hermes"
         assert data["version"] == "2.0.0"
+
 
 class TestCorsConfiguration:
     def test_dev_allows_wildcard_only_with_explicit_toggle(self, monkeypatch):
@@ -65,6 +66,7 @@ class TestCorsConfiguration:
             "https://ui.example.com",
             "https://admin.example.com",
         ]
+
 
 class TestRunEndpoints:
     @staticmethod
@@ -147,11 +149,10 @@ class TestRunEndpoints:
         assert data["run_id"].startswith("run_")
         assert "run_token" in data
 
+
 class TestAuthHelpers:
     def test_validate_run_token_rejects_mismatch(self):
         from fastapi import HTTPException
-
-        from server.api import routes
 
         routes._run_tokens["run_x"] = "secret"
         with pytest.raises(HTTPException) as err:

@@ -64,6 +64,13 @@ class PipelineConfig(BaseModel):
     min_confidence_threshold: float = 0.5
 
 
+class TargetURLPolicyConfig(BaseModel):
+    """Policy configuration for target URL validation."""
+
+    allow_private_targets: bool = False
+    allowed_schemes: list[str] = Field(default_factory=lambda: ["http", "https"])
+
+
 class APIConfig(BaseModel):
     """API/security and runtime controls from environment."""
 

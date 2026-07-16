@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
-import os
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -24,14 +25,19 @@ from pydantic import BaseModel, Field
 from server.api.run_repository import InMemoryRunRepository
 from server.api.run_service import RunService
 from server.conduit.engine import Conduit
-from server.config.settings import BrowserConfig, HermesConfig, PipelineConfig
+from server.config.settings import APIConfig, BrowserConfig, HermesConfig, PipelineConfig
 from server.telemetry.errors import ErrorCode, emit_structured_error
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_api_config = APIConfig()
 _pipeline_config = PipelineConfig()
 _run_service = RunService(InMemoryRunRepository())
+_run_tokens: dict[str, str] = {}
+_run_order: list[str] = []
+_run_results: dict[str, Any] = {}
+_run_summary_ledger = Path(_pipeline_config.data_dir) / "run_summaries.jsonl"
 
 
 # --- Request/Response Models ---
@@ -182,13 +188,15 @@ async def create_run(request: RunRequest, _: None = Depends(require_api_access))
         extraction_mode=request.extraction_mode,
         heuristic_selectors=request.heuristic_selectors,
         allow_cross_origin=request.allow_cross_origin,
-        owner_principal=principal,
+        owner_principal=None,
         browser=BrowserConfig(headless=request.headless),
         pipeline=PipelineConfig(debug_mode=request.debug_mode),
     )
 
     conduit = Conduit(config)
     run_id = await _run_service.create_run(conduit)
+    run_token = secrets.token_urlsafe(32)
+    _run_tokens[run_id] = run_token
 
     return RunResponse(
         run_id=run_id,
