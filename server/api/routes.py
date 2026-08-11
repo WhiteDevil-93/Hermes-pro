@@ -72,7 +72,7 @@ def _is_obviously_private_target(target_url: str) -> bool:
     if not hostname:
         return True
 
-    if hostname in {"localhost", "0", "0.0.0.0", "::", "::1"}:
+    if hostname in {"localhost", "0", "0.0.0.0", "::", "::1"}:  # nosec B104
         return True
 
     if hostname.endswith(".local") or hostname.endswith(".internal"):
